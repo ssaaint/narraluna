@@ -1,0 +1,320 @@
+@import url('https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@400;600&family=Inter:wght@300;400;500&display=swap');
+
+/* RESET */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+html, body, #root {
+  height: 100%;
+}
+
+/* FONDO */
+body {
+  font-family: 'Inter', sans-serif;
+  background: #0b0014; /* solo color base */
+  color: #e5d9ff;
+  min-height: 100vh;
+}
+
+.app {
+  position: relative;
+  z-index: 2;
+}
+
+.stars-canvas {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 1;
+  pointer-events: none;
+}
+
+/* NAVBAR */
+.navbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 20px 40px;
+}
+
+/* NAVBAR RIGHT */
+.nav-right {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+/* BUSCADOR */
+.search {
+  padding: 8px 12px;
+  border-radius: 10px;
+  border: none;
+  outline: none;
+  background: rgba(255,255,255,0.05);
+  color: white;
+  font-size: 0.85rem;
+  width: 180px;
+  transition: 0.3s;
+}
+
+.search:focus {
+  background: rgba(255,255,255,0.1);
+}
+
+/* LINKS */
+.navbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  box-shadow: 0 5px 20px rgba(123,44,191,0.15);
+  backdrop-filter: blur(12px);
+  background: rgba(10, 0, 20, 0.6);
+  border-bottom: 1px solid rgba(199,125,255,0.2);
+  padding: 15px 40px;
+}
+
+.navbar a:hover {
+  color: #c77dff;
+}
+
+/* BOTONES */
+.btn-logout {
+  background: rgba(123,44,191,0.2);
+  border: 1px solid rgba(199,125,255,0.4);
+  color: #e5d9ff;
+  padding: 6px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: 0.3s;
+}
+
+.btn-logout:hover {
+  background: rgba(123,44,191,0.4);
+}
+
+.logo {
+  font-family: 'Cormorant Garamond', serif;
+}
+
+/* HERO */
+.hero {
+  text-align: center;
+  padding: 80px 20px;
+}
+
+.hero h1 {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 3rem;
+}
+
+.hero p {
+  opacity: 0.8;
+  margin-bottom: 20px;
+}
+
+/* BOTONES */
+button {
+  background: #7b2cbf;
+  border: none;
+  padding: 10px 16px;
+  border-radius: 8px;
+  color: white;
+  cursor: pointer;
+}
+
+button:hover {
+  background: #9d4edd;
+}
+
+.btn-spaced {
+  margin-left: 10px;
+}
+
+.btn-secondary {
+  background: transparent;
+  border: 1px solid #7b2cbf;
+  margin-right: 10px;
+}
+
+/* STORIES */
+.stories {
+  padding: 40px;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 20px;
+}
+
+.featured-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+  margin-bottom: 40px;
+}
+
+.story-link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.card {
+  background: rgba(255,255,255,0.05);
+  padding: 20px;
+  border-radius: 12px;
+  backdrop-filter: blur(10px);
+  transition: all 0.25s ease;
+}
+
+.card:hover {
+  transform: scale(1.02);
+  box-shadow: 0 10px 30px rgba(123,44,191,0.3);
+}
+
+.premium {
+  background: linear-gradient(145deg, rgba(123,44,191,0.25), rgba(0,0,0,0.5));
+  border: 1px solid rgba(199,125,255,0.3);
+  box-shadow: 0 0 25px rgba(123,44,191,0.25);
+}
+
+.page {
+  padding: 40px;
+}
+
+.page-home {
+  padding-top: 60px;
+}
+
+.page-reader {
+  max-width: 800px;
+  margin: auto;
+}
+
+.page-profile {
+  max-width: 600px;
+  margin: auto;
+}
+
+.section-title {
+  margin-bottom: 20px;
+}
+
+.section-title-spaced {
+  margin-top: 40px;
+}
+
+.story-rank {
+  color: #ffd60a;
+}
+
+.story-meta {
+  opacity: 0.7;
+}
+
+.muted {
+  opacity: 0.6;
+}
+
+.divider {
+  margin: 20px 0;
+  opacity: 0.2;
+}
+
+.divider-large {
+  margin: 40px 0;
+}
+
+.story-content {
+  line-height: 1.8;
+  white-space: pre-line;
+}
+
+.full-width {
+  width: 100%;
+}
+
+.comment-input {
+  width: 100%;
+  margin-top: 10px;
+}
+
+.comments-list {
+  margin-top: 20px;
+}
+
+.comment-card {
+  background: rgba(255,255,255,0.05);
+  padding: 10px;
+  border-radius: 8px;
+  margin-bottom: 10px;
+}
+
+.comment-author {
+  font-size: 0.9rem;
+  opacity: 0.6;
+}
+
+.profile-field {
+  width: 100%;
+  margin-bottom: 10px;
+}
+
+.profile-avatar {
+  width: 80px;
+  border-radius: 50%;
+}
+
+.logo {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 1.8rem;
+  text-decoration: none;
+  color: #e5d9ff;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: 0.3s;
+}
+
+.logo:hover {
+  color: #c77dff;
+  transform: scale(1.03);
+}
+
+.moon {
+  font-size: 1.5rem;
+  filter: drop-shadow(0 0 6px rgba(199,125,255,0.6));
+}
+
+/* 🌙 LUNA DE FONDO */
+body::after {
+  content: "";
+  position: fixed;
+  top: 80px;
+  right: 10%;
+  width: 300px;
+  height: 300px;
+  background: radial-gradient(circle, rgba(199,125,255,0.25), transparent 70%);
+  border-radius: 50%;
+  filter: blur(40px);
+  z-index: -1;
+  pointer-events: none;
+}
+
+body::before {
+  animation: moveStars 60s linear infinite;
+}
+
+@keyframes moveStars {
+  from {
+    transform: translateY(0px);
+  }
+  to {
+    transform: translateY(-100px);
+  }
+}
