@@ -10,6 +10,7 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import { getDisplayChapters } from "../utils/chapterUtils";
+import { userCanManageStory } from "../utils/permissionUtils";
 
 export default function NuevoCapitulo() {
   const { historiaId } = useParams();
@@ -62,17 +63,17 @@ export default function NuevoCapitulo() {
 
   const publicarCapitulo = async () => {
     if (!auth.currentUser) {
-      alert("Tenés que iniciar sesión");
+      alert("Tenes que iniciar sesion");
       return;
     }
 
     if (!titulo.trim() || !contenido.trim()) {
-      alert("Completá todos los campos");
+      alert("Completa todos los campos");
       return;
     }
 
-    if (historia?.autorId && historia.autorId !== auth.currentUser.uid) {
-      alert("Solo el autor puede agregar capítulos");
+    if (!userCanManageStory(auth.currentUser, historia)) {
+      alert("Solo el creador o colaboradores pueden agregar capitulos");
       return;
     }
 
@@ -81,7 +82,8 @@ export default function NuevoCapitulo() {
         titulo,
         contenido,
         orden: cantidadCapitulos + 1,
-        fecha: new Date()
+        fecha: new Date(),
+        updatedAt: new Date()
       });
 
       await updateDoc(doc(db, "historias", historiaId), {
@@ -89,11 +91,11 @@ export default function NuevoCapitulo() {
         updatedAt: new Date()
       });
 
-      alert("Capítulo publicado");
+      alert("Capitulo publicado");
       navigate(`/historia/${historiaId}`);
     } catch (error) {
       console.error(error);
-      alert("Error al publicar el capítulo");
+      alert("Error al publicar el capitulo");
     }
   };
 
@@ -102,15 +104,15 @@ export default function NuevoCapitulo() {
   }
 
   if (!historia) {
-    return <p className="page">No se encontró la historia</p>;
+    return <p className="page">No se encontro la historia</p>;
   }
 
   if (!auth.currentUser) {
-    return <p className="page">Tenés que iniciar sesión para agregar capítulos.</p>;
+    return <p className="page">Tenes que iniciar sesion para agregar capitulos.</p>;
   }
 
-  if (historia.autorId && historia.autorId !== auth.currentUser.uid) {
-    return <p className="page">Solo el autor puede agregar capítulos.</p>;
+  if (!userCanManageStory(auth.currentUser, historia)) {
+    return <p className="page">Solo el creador o colaboradores pueden agregar capitulos.</p>;
   }
 
   return (
@@ -120,24 +122,24 @@ export default function NuevoCapitulo() {
       </Link>
 
       <p className="section-kicker">{historia.titulo}</p>
-      <h2>Nuevo capítulo</h2>
+      <h2>Nuevo capitulo</h2>
 
       <input
-        placeholder="Título del capítulo"
+        placeholder="Titulo del capitulo"
         value={titulo}
         onChange={(event) => setTitulo(event.target.value)}
         className="form-field"
       />
 
       <textarea
-        placeholder="Contenido del capítulo..."
+        placeholder="Contenido del capitulo..."
         value={contenido}
         onChange={(event) => setContenido(event.target.value)}
         rows={12}
         className="form-field full-width"
       />
 
-      <button onClick={publicarCapitulo}>Publicar capítulo</button>
+      <button onClick={publicarCapitulo}>Publicar capitulo</button>
     </main>
   );
 }

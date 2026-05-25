@@ -10,6 +10,7 @@ import Login from "./pages/Login";
 import HistoriaDetalle from "./pages/HistoriaDetalle";
 import CapituloLectura from "./pages/CapituloLectura";
 import NuevoCapitulo from "./pages/NuevoCapitulo";
+import EditarCapitulo from "./pages/EditarCapitulo";
 import Navbar from "./components/Navbar";
 import Stars from "./components/Stars";
 
@@ -45,6 +46,10 @@ export default function App() {
         <Route
           path="/historia/:historiaId/capitulo/:capituloId"
           element={<CapituloLectura />}
+        />
+        <Route
+          path="/historia/:historiaId/capitulo/:capituloId/editar"
+          element={<EditarCapitulo />}
         />
         <Route
           path="/historia/:historiaId/nuevo-capitulo"
