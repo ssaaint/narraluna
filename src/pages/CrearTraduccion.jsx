@@ -1,12 +1,14 @@
 import { useEffect, useMemo, useState } from "react";
 import { Link } from "react-router-dom";
-import { collection, getDocs } from "firebase/firestore";
+import { collection, doc, getDoc, getDocs } from "firebase/firestore";
 import StoryCard from "../components/StoryCard";
 import { auth, db } from "../firebase";
+import { isAdmin } from "../utils/permissionUtils";
 import { isTranslatableWork, sortByDate } from "../utils/storyUtils";
 
 export default function CrearTraduccion() {
   const [obrasDisponibles, setObrasDisponibles] = useState([]);
+  const [perfil, setPerfil] = useState({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -40,8 +42,15 @@ export default function CrearTraduccion() {
           );
 
         setObrasDisponibles(sortByDate([...obras, ...historiasCompatibles]));
+
+        if (auth.currentUser) {
+          const perfilSnap = await getDoc(doc(db, "usuarios", auth.currentUser.uid));
+          setPerfil(perfilSnap.exists() ? perfilSnap.data() : {});
+        } else {
+          setPerfil({});
+        }
       } catch (error) {
-        console.error(error);
+        console.error("Error completo:", error);
       } finally {
         setLoading(false);
       }
@@ -78,9 +87,11 @@ export default function CrearTraduccion() {
         </div>
 
         <div className="hero-actions">
-          <Link to="/obras/crear" className="btn-link btn-link-primary">
-            Crear ficha externa
-          </Link>
+          {isAdmin(perfil) && (
+            <Link to="/obras/crear" className="btn-link btn-link-primary">
+              Crear ficha externa
+            </Link>
+          )}
           <Link to="/explorar" className="btn-link btn-link-ghost">
             Explorar biblioteca
           </Link>

@@ -115,7 +115,7 @@ export const normalizeLegacyHistoriaItem = (id, data = {}) => ({
 export const buildLibraryItems = (obrasDocs = [], historiasDocs = []) => {
   const obras = obrasDocs.map((obraDoc) =>
     normalizeObraItem(obraDoc.id, obraDoc.data())
-  );
+  ).filter((obra) => obra.estado !== "eliminada");
   const obraIds = new Set(obras.map((obra) => obra.id));
   const migratedLegacyIds = new Set(
     obras.map((obra) => obra.historiaLegacyId).filter(Boolean)
@@ -127,7 +127,8 @@ export const buildLibraryItems = (obrasDocs = [], historiasDocs = []) => {
     )
     .map((historiaDoc) =>
       normalizeLegacyHistoriaItem(historiaDoc.id, historiaDoc.data())
-    );
+    )
+    .filter((historia) => historia.estado !== "eliminada");
 
   return [...obras, ...legacyHistorias];
 };

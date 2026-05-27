@@ -209,9 +209,9 @@ export default function Home() {
     <main className="page page-home">
       <section className="home-hero home-hero-minimal">
         <div className="home-hero-copy">
-          <p className="section-kicker">Narraluna</p>
-          <h1>Narraluna</h1>
-          <p>Escribi, lee y trascende.</p>
+          <p className="section-kicker">Umbral de Historias</p>
+          <h1>Umbral de Historias</h1>
+          <p>Cruza el umbral, lee y trascende.</p>
 
           <div className="hero-actions">
             <Link to="/explorar" className="btn-link btn-link-primary">

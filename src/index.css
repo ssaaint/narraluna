@@ -54,6 +54,19 @@ body {
   gap: 15px;
 }
 
+.nav-links,
+.nav-account {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.nav-account {
+  margin-left: 8px;
+  padding-left: 12px;
+  border-left: 1px solid rgba(229, 217, 255, 0.12);
+}
+
 .notification-wrapper {
   position: relative;
 }
@@ -666,6 +679,17 @@ button:disabled {
   gap: 14px;
 }
 
+.translation-heading-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: flex-start;
+}
+
+.translation-language-select {
+  min-width: min(260px, 100%);
+}
+
 .translation-card {
   display: grid;
   gap: 12px;
@@ -686,6 +710,12 @@ button:disabled {
 .translation-card p {
   color: rgba(229, 217, 255, 0.72);
   line-height: 1.45;
+}
+
+.admin-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
 }
 
 .story-detail-hero {
@@ -848,6 +878,37 @@ button:disabled {
   margin-bottom: 12px;
 }
 
+.comment-form {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 16px;
+}
+
+.comment-form button {
+  justify-self: start;
+}
+
+.obra-comments-list {
+  display: grid;
+  gap: 12px;
+}
+
+.obra-comment-card {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+}
+
+.comment-author-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.comment-author-row strong {
+  color: #e5d9ff;
+}
+
 .reading-settings-panel {
   margin: 24px 0;
   padding: 18px;
@@ -985,6 +1046,61 @@ button:disabled {
   display: grid;
   gap: 18px;
   margin-top: 28px;
+}
+
+.chapter-images-input {
+  display: grid;
+  gap: 12px;
+  margin-bottom: 18px;
+  padding: 16px;
+  border: 1px solid rgba(110, 231, 216, 0.16);
+  border-radius: 8px;
+  background: rgba(255,255,255,0.04);
+}
+
+.chapter-images-input > p {
+  color: rgba(229, 217, 255, 0.72);
+  line-height: 1.45;
+}
+
+.chapter-image-form {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 0.8fr) auto;
+  gap: 10px;
+  align-items: start;
+}
+
+.chapter-image-form .form-field {
+  margin-bottom: 0;
+}
+
+.chapter-image-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+}
+
+.chapter-image-preview {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  border: 1px solid rgba(199,125,255,0.16);
+  border-radius: 8px;
+  background: rgba(10, 0, 20, 0.42);
+}
+
+.chapter-image-preview img {
+  width: 100%;
+  aspect-ratio: 16 / 10;
+  object-fit: cover;
+  border-radius: 8px;
+  background: rgba(255,255,255,0.04);
+}
+
+.chapter-image-preview figcaption {
+  color: rgba(229, 217, 255, 0.7);
+  font-size: 0.84rem;
+  line-height: 1.4;
 }
 
 .chapter-image {
@@ -1158,7 +1274,7 @@ button:disabled {
 
 .profile-stats-grid {
   display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
+  grid-template-columns: repeat(7, minmax(0, 1fr));
   gap: 12px;
   margin-top: 28px;
 }
@@ -1378,9 +1494,16 @@ body::before {
 }
 
 .nav-right {
+  flex: 1;
   flex-wrap: wrap;
   justify-content: flex-end;
   gap: 10px;
+}
+
+.nav-links,
+.nav-account {
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 .nav-link {
@@ -1872,6 +1995,23 @@ body::before {
   background: rgba(255, 209, 102, 0.12);
 }
 
+.btn-danger {
+  min-height: 42px;
+  border: 1px solid rgba(255, 122, 144, 0.38);
+  background: rgba(255, 122, 144, 0.12);
+  color: #ff9aad;
+}
+
+.btn-danger:hover {
+  background: rgba(255, 122, 144, 0.2);
+}
+
+.btn-danger-soft {
+  min-height: 36px;
+  padding: 8px 12px;
+  font-size: 0.84rem;
+}
+
 .result-count {
   margin-bottom: 18px;
 }
@@ -1882,6 +2022,30 @@ body::before {
   border-radius: 8px;
   background: rgba(255,255,255,0.04);
   color: rgba(229, 217, 255, 0.72);
+}
+
+.page-empty-state {
+  width: min(860px, calc(100% - 48px));
+  margin: 0 auto;
+  padding: 72px 0;
+}
+
+.empty-state-large {
+  display: grid;
+  gap: 12px;
+  padding: 36px;
+}
+
+.empty-state-large h1 {
+  font-family: 'Cormorant Garamond', serif;
+  font-size: 3.2rem;
+  line-height: 1;
+}
+
+.empty-state-large p:not(.section-kicker) {
+  max-width: 620px;
+  color: rgba(229, 217, 255, 0.76);
+  line-height: 1.6;
 }
 
 .genre-grid {
@@ -2003,6 +2167,18 @@ body::before {
   .nav-right {
     width: 100%;
     justify-content: flex-start;
+  }
+
+  .nav-links,
+  .nav-account {
+    justify-content: flex-start;
+  }
+
+  .nav-account {
+    width: 100%;
+    margin-left: 0;
+    padding-left: 0;
+    border-left: 0;
   }
 
   .search {
@@ -2197,5 +2373,11 @@ body::before {
   .form-grid {
     grid-template-columns: 1fr;
     gap: 0;
+  }
+
+  .chapter-image-form,
+  .translation-heading-row {
+    display: grid;
+    grid-template-columns: 1fr;
   }
 }

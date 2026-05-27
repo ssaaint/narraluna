@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   addDoc,
@@ -10,6 +10,7 @@ import {
 import { auth, db } from "../firebase";
 import { createUniqueSlug } from "../utils/slugUtils";
 import { OBRA_TYPE_EXTERNAL } from "../utils/obraUtils";
+import { isAdmin } from "../utils/permissionUtils";
 import {
   listOrEmpty,
   safeFirestorePayload,
@@ -51,12 +52,43 @@ export default function CrearObra() {
   const [generos, setGeneros] = useState("");
   const [etiquetas, setEtiquetas] = useState("");
   const [portada, setPortada] = useState("");
+  const [perfil, setPerfil] = useState({});
+  const [loadingProfile, setLoadingProfile] = useState(true);
+
+  useEffect(() => {
+    const cargarPerfil = async () => {
+      const currentUser = auth.currentUser;
+
+      if (!currentUser) {
+        setPerfil({});
+        setLoadingProfile(false);
+        return;
+      }
+
+      try {
+        const perfilSnap = await getDoc(doc(db, "usuarios", currentUser.uid));
+        setPerfil(perfilSnap.exists() ? perfilSnap.data() : {});
+      } catch (error) {
+        console.error("No se pudo cargar perfil admin:", error);
+        setPerfil({});
+      } finally {
+        setLoadingProfile(false);
+      }
+    };
+
+    cargarPerfil();
+  }, []);
 
   const crearObra = async () => {
     const currentUser = auth.currentUser;
 
     if (!currentUser) {
       alert("Tenes que iniciar sesion");
+      return;
+    }
+
+    if (!isAdmin(perfil)) {
+      alert("Solo un administrador puede crear fichas de obras externas.");
       return;
     }
 
@@ -153,6 +185,22 @@ export default function CrearObra() {
 
   if (!auth.currentUser) {
     return <p className="page">Tenes que iniciar sesion</p>;
+  }
+
+  if (loadingProfile) {
+    return <p className="page">Cargando permisos...</p>;
+  }
+
+  if (!isAdmin(perfil)) {
+    return (
+      <main className="page page-form">
+        <p className="section-kicker">Administracion</p>
+        <h2>Crear ficha traducible</h2>
+        <p className="empty-state">
+          Solo un administrador puede crear obras externas traducibles.
+        </p>
+      </main>
+    );
   }
 
   return (

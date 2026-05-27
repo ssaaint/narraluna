@@ -6,6 +6,7 @@ import {
   getDoc,
   getDocs,
   increment,
+  runTransaction,
   setDoc
 } from "firebase/firestore";
 import { auth, db } from "../firebase";
@@ -13,7 +14,8 @@ import { getDisplayChapters } from "../utils/chapterUtils";
 import { buildObraFromHistoria } from "../utils/obraUtils";
 import { safeFirestorePayload } from "../utils/firestoreSafe";
 
-const READER_PREFS_KEY = "narraluna.readerPreferences";
+const READER_PREFS_KEY = "umbral.readerPreferences";
+const LEGACY_READER_PREFS_KEY = "narraluna.readerPreferences";
 
 const DEFAULT_READER_PREFS = {
   fontSize: 18,
@@ -40,7 +42,8 @@ const loadReaderPreferences = () => {
 
   try {
     const savedPreferences = JSON.parse(
-      window.localStorage.getItem(READER_PREFS_KEY)
+      window.localStorage.getItem(READER_PREFS_KEY) ||
+        window.localStorage.getItem(LEGACY_READER_PREFS_KEY)
     );
 
     return {
@@ -78,6 +81,11 @@ const getChapterImages = (capitulo) =>
 const getChapterNumber = (capitulo) =>
   Number(capitulo?.numero || capitulo?.orden || 0) || 0;
 
+const sanitizeReadId = (value) =>
+  String(value || "item")
+    .replace(/[^a-zA-Z0-9_-]/g, "_")
+    .slice(0, 120);
+
 const saveReadingProgress = async ({
   user,
   obra,
@@ -95,12 +103,14 @@ const saveReadingProgress = async ({
       ? `/obra/${obra.id}/traducciones/${traduccionId}/capitulo/${capitulo.id}`
       : `/obra/${obra.id}/capitulo/${capitulo.id}`;
   const progressRef = doc(db, "usuarios", user.uid, "progreso", obra.id);
-  const previousSnap = await getDoc(progressRef);
-  const previous = previousSnap.exists() ? previousSnap.data() : {};
-  const shouldCountRead =
-    previous.capituloId !== capitulo.id ||
-    previous.tipo !== tipo ||
-    (previous.traduccionId || "") !== (traduccionId || "");
+  const userRef = doc(db, "usuarios", user.uid);
+  const readKey = [
+    obra.id,
+    tipo,
+    traduccionId || "original",
+    capitulo.id
+  ].map(sanitizeReadId).join("__");
+  const readRef = doc(db, "usuarios", user.uid, "capitulosLeidos", readKey);
 
   const progressPayload = safeFirestorePayload({
     userId: user.uid,
@@ -137,11 +147,36 @@ const saveReadingProgress = async ({
     updatedAt: now
   };
 
-  if (shouldCountRead) {
-    perfilUpdate.capitulosLeidos = increment(1);
-  }
+  await runTransaction(db, async (transaction) => {
+    const readSnap = await transaction.get(readRef);
 
-  await setDoc(doc(db, "usuarios", user.uid), perfilUpdate, { merge: true });
+    if (!readSnap.exists()) {
+      transaction.set(
+        readRef,
+        safeFirestorePayload({
+          obraId: obra.id,
+          capituloId: capitulo.id,
+          tipo,
+          traduccionId: traduccionId || null,
+          numeroCapitulo: chapterNumber,
+          tituloCapitulo: capitulo.titulo || "",
+          fechaLectura: now,
+          ruta: route
+        })
+      );
+      transaction.set(
+        userRef,
+        {
+          ...perfilUpdate,
+          capitulosLeidos: increment(1)
+        },
+        { merge: true }
+      );
+      return;
+    }
+
+    transaction.set(userRef, perfilUpdate, { merge: true });
+  });
 };
 
 export default function ObraCapituloLectura() {
@@ -153,6 +188,9 @@ export default function ObraCapituloLectura() {
   const [capituloActual, setCapituloActual] = useState(null);
   const [readerPrefs, setReaderPrefs] = useState(loadReaderPreferences);
   const [loading, setLoading] = useState(true);
+  const [likedByUser, setLikedByUser] = useState(false);
+  const [chapterLikes, setChapterLikes] = useState(0);
+  const [actionBusy, setActionBusy] = useState(false);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -261,8 +299,37 @@ export default function ObraCapituloLectura() {
         setObra(obraData);
         setCapitulos(capitulosData);
         setCapituloActual(capituloEncontrado);
+        setChapterLikes(Number(capituloEncontrado?.likesCount || 0) || 0);
 
         if (auth.currentUser && capituloEncontrado) {
+          try {
+            const likePath = traduccionId
+              ? doc(
+                  db,
+                  "obras",
+                  obraId,
+                  "traducciones",
+                  traduccionId,
+                  "capitulos",
+                  capituloId,
+                  "likes",
+                  auth.currentUser.uid
+                )
+              : doc(
+                  db,
+                  "obras",
+                  obraId,
+                  "capitulos",
+                  capituloId,
+                  "likes",
+                  auth.currentUser.uid
+                );
+            const likeSnap = await getDoc(likePath);
+            setLikedByUser(likeSnap.exists());
+          } catch {
+            setLikedByUser(false);
+          }
+
           await saveReadingProgress({
             user: auth.currentUser,
             obra: obraData,
@@ -293,6 +360,89 @@ export default function ObraCapituloLectura() {
 
   const resetReaderPreferences = () => {
     setReaderPrefs(DEFAULT_READER_PREFS);
+  };
+
+  const toggleChapterLike = async () => {
+    const currentUser = auth.currentUser;
+
+    if (!currentUser) {
+      alert("Tenes que iniciar sesion");
+      return;
+    }
+
+    if (!capituloActual) return;
+
+    try {
+      setActionBusy(true);
+      const capituloRef = traduccionId
+        ? doc(
+            db,
+            "obras",
+            obraId,
+            "traducciones",
+            traduccionId,
+            "capitulos",
+            capituloId
+          )
+        : doc(db, "obras", obraId, "capitulos", capituloId);
+      const capituloSnap = await getDoc(capituloRef);
+
+      if (!capituloSnap.exists()) {
+        await setDoc(
+          capituloRef,
+          safeFirestorePayload({
+            ...capituloActual,
+            likesCount: Number(capituloActual.likesCount || 0) || 0,
+            updatedAt: new Date()
+          }),
+          { merge: true }
+        );
+      }
+
+      const likeRef = doc(capituloRef, "likes", currentUser.uid);
+      const nextLiked = await runTransaction(db, async (transaction) => {
+        const likeSnap = await transaction.get(likeRef);
+
+        if (likeSnap.exists()) {
+          transaction.delete(likeRef);
+          transaction.set(
+            capituloRef,
+            {
+              likesCount: increment(-1),
+              updatedAt: new Date()
+            },
+            { merge: true }
+          );
+          return false;
+        }
+
+        transaction.set(
+          likeRef,
+          safeFirestorePayload({
+            userId: currentUser.uid,
+            email: currentUser.email || "",
+            fecha: new Date()
+          })
+        );
+        transaction.set(
+          capituloRef,
+          {
+            likesCount: increment(1),
+            updatedAt: new Date()
+          },
+          { merge: true }
+        );
+        return true;
+      });
+
+      setLikedByUser(nextLiked);
+      setChapterLikes((current) => Math.max(0, current + (nextLiked ? 1 : -1)));
+    } catch (error) {
+      console.error("Error completo:", error);
+      alert(error.message || "Error desconocido");
+    } finally {
+      setActionBusy(false);
+    }
   };
 
   if (loading) {
@@ -347,6 +497,16 @@ export default function ObraCapituloLectura() {
             {capituloActual.estado ? ` - ${capituloActual.estado}` : ""}
           </p>
         </div>
+        {auth.currentUser && (
+          <button
+            type="button"
+            className="btn-link btn-link-ghost"
+            onClick={toggleChapterLike}
+            disabled={actionBusy}
+          >
+            {likedByUser ? "Quitar like" : "Dar like"} ({chapterLikes})
+          </button>
+        )}
       </div>
 
       <section className="reading-settings-panel" aria-label="Ajustes de lectura">

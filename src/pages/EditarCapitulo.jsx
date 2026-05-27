@@ -1,10 +1,22 @@
 import { useEffect, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { doc, getDoc, updateDoc } from "firebase/firestore";
+import { doc, getDoc, setDoc, updateDoc } from "firebase/firestore";
 import { auth, db } from "../firebase";
+import ChapterImagesInput from "../components/ChapterImagesInput";
 import { LEGACY_CHAPTER_ID } from "../utils/chapterUtils";
+import { parseChapterImages, safeFirestorePayload } from "../utils/firestoreSafe";
 import { userCanManageStory } from "../utils/permissionUtils";
 import { isTranslation } from "../utils/storyUtils";
+
+const imagesToText = (images) =>
+  Array.isArray(images)
+    ? images
+        .map((image) =>
+          image?.caption ? `${image.url || ""} | ${image.caption}` : image?.url || ""
+        )
+        .filter(Boolean)
+        .join("\n")
+    : "";
 
 export default function EditarCapitulo() {
   const { historiaId, capituloId } = useParams();
@@ -13,6 +25,7 @@ export default function EditarCapitulo() {
   const [historia, setHistoria] = useState(null);
   const [titulo, setTitulo] = useState("");
   const [contenido, setContenido] = useState("");
+  const [imagenesCapitulo, setImagenesCapitulo] = useState("");
   const [orden, setOrden] = useState(1);
   const [capitulo, setCapitulo] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -37,6 +50,7 @@ export default function EditarCapitulo() {
         if (capituloId === LEGACY_CHAPTER_ID) {
           setTitulo("Capitulo unico");
           setContenido(historiaData.contenido || "");
+          setImagenesCapitulo(imagesToText(historiaData.imagenes));
           setOrden(1);
           setCapitulo({
             id: LEGACY_CHAPTER_ID,
@@ -57,6 +71,7 @@ export default function EditarCapitulo() {
           });
           setTitulo(data.titulo || "");
           setContenido(data.contenido || "");
+          setImagenesCapitulo(imagesToText(data.imagenes));
           setOrden(data.orden || 1);
         }
       } catch (error) {
@@ -98,16 +113,44 @@ export default function EditarCapitulo() {
     }
 
     try {
-      await updateDoc(doc(db, "historias", historiaId, "capitulos", capituloId), {
+      const updatePayload = safeFirestorePayload({
         titulo,
         contenido,
+        imagenes: parseChapterImages(imagenesCapitulo),
         orden: Number(orden) || 1,
         updatedAt: new Date()
       });
 
+      await updateDoc(doc(db, "historias", historiaId, "capitulos", capituloId), updatePayload);
+
       await updateDoc(doc(db, "historias", historiaId), {
         updatedAt: new Date()
       });
+
+      if (!isTranslation(historia)) {
+        try {
+          await setDoc(
+            doc(db, "obras", historiaId, "capitulos", capituloId),
+            safeFirestorePayload({
+              ...updatePayload,
+              numero: Number(orden) || 1,
+              origen: "original",
+              historiaLegacyId: historiaId
+            }),
+            { merge: true }
+          );
+          await setDoc(
+            doc(db, "obras", historiaId),
+            {
+              fechaActualizacion: new Date(),
+              updatedAt: new Date()
+            },
+            { merge: true }
+          );
+        } catch (mirrorError) {
+          console.error("No se pudo reflejar el capitulo en obras:", mirrorError);
+        }
+      }
 
       alert("Capitulo guardado");
       navigate(`/historia/${historiaId}/capitulo/${capituloId}`);
@@ -180,6 +223,13 @@ export default function EditarCapitulo() {
         className="form-field full-width"
         disabled={capituloId === LEGACY_CHAPTER_ID}
       />
+
+      {capituloId !== LEGACY_CHAPTER_ID && (
+        <ChapterImagesInput
+          value={imagenesCapitulo}
+          onChange={setImagenesCapitulo}
+        />
+      )}
 
       {capituloId !== LEGACY_CHAPTER_ID && (
         <button onClick={guardarCapitulo}>Guardar capitulo</button>

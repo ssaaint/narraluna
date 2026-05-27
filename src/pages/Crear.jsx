@@ -9,6 +9,7 @@ import {
   setDoc
 } from "firebase/firestore";
 import { auth, db } from "../firebase";
+import ChapterImagesInput from "../components/ChapterImagesInput";
 import { createUniqueSlug } from "../utils/slugUtils";
 import { OBRA_TYPE_ORIGINAL } from "../utils/obraUtils";
 import {
@@ -330,12 +331,9 @@ export default function Crear() {
         className="form-field full-width"
       />
 
-      <textarea
-        placeholder="Imagenes del capitulo por URL, una por linea. Opcional: URL | descripcion"
+      <ChapterImagesInput
         value={imagenesCapitulo}
-        onChange={(event) => setImagenesCapitulo(event.target.value)}
-        rows={4}
-        className="form-field full-width"
+        onChange={setImagenesCapitulo}
       />
 
       <button onClick={publicar}>Publicar historia original</button>

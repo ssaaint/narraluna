@@ -9,6 +9,7 @@ import {
   uniqueList
 } from "./storyUtils";
 import { createSlug, getStorySlug } from "./slugUtils";
+import { isAdmin } from "./permissionUtils";
 
 export const OBRA_TYPE_ORIGINAL = "original";
 export const OBRA_TYPE_TRANSLATION = "traduccion";
@@ -97,6 +98,7 @@ export const userCanUploadTranslation = (user, perfil = {}, obra = {}) => {
   return (
     readChapters >= MIN_CHAPTERS_TO_TRANSLATE ||
     perfil.puedeTraducir === true ||
+    isAdmin(perfil) ||
     manuallyAuthorized
   );
 };

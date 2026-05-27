@@ -25,6 +25,10 @@ export default function App() {
   const [user, setUser] = useState(null);
 
   useEffect(() => {
+    document.title = "Umbral de Historias";
+  }, []);
+
+  useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
     });

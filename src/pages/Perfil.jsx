@@ -99,6 +99,7 @@ export default function Perfil() {
   const [historiasSeguidas, setHistoriasSeguidas] = useState([]);
   const [leyendo, setLeyendo] = useState([]);
   const [capitulosTraducidos, setCapitulosTraducidos] = useState([]);
+  const [perfilUsuario, setPerfilUsuario] = useState({});
 
   useEffect(() => {
     const cargarPerfil = async () => {
@@ -111,6 +112,7 @@ export default function Perfil() {
         const perfilRef = doc(db, "usuarios", user.uid);
         const perfilSnap = await getDoc(perfilRef);
         const perfilData = perfilSnap.exists() ? perfilSnap.data() : {};
+        setPerfilUsuario(perfilData);
 
         setNombre(perfilData.nombre || "");
         setBio(perfilData.bio || "");
@@ -146,7 +148,21 @@ export default function Perfil() {
           sortByDate(publicaciones.filter((historia) => isTranslation(historia)))
         );
 
-        const followedIds = getFollowedIds(perfilData);
+        let followedIds = getFollowedIds(perfilData);
+
+        try {
+          const seguidasSnap = await getDocs(
+            collection(db, "usuarios", user.uid, "seguidas")
+          );
+          followedIds = [
+            ...new Set([
+              ...followedIds,
+              ...seguidasSnap.docs.map((seguidaDoc) => seguidaDoc.id)
+            ])
+          ];
+        } catch {
+          // Los arrays legacy siguen cubriendo perfiles anteriores.
+        }
         const progresoLectura = perfilData.progresoLectura || {};
         const cargarObraCompat = async (obraId) => {
           const obraSnap = await getDoc(doc(db, "obras", obraId));
@@ -232,21 +248,31 @@ export default function Perfil() {
         setLeyendo(leyendoDocs.filter(Boolean));
 
         const followedDocs = await Promise.all(
-          followedIds.map(async (historiaId) => {
-            const followedSnap = await getDoc(doc(db, "historias", historiaId));
+          followedIds.map(async (obraId) => {
+            const historia = await cargarObraCompat(obraId);
 
-            if (!followedSnap.exists()) {
-              return null;
+            if (!historia) return null;
+
+            let capitulosSnap;
+
+            try {
+              capitulosSnap = await getDocs(
+                collection(db, "obras", obraId, "capitulos")
+              );
+            } catch {
+              capitulosSnap = { docs: [] };
             }
 
-            const historia = {
-              id: followedSnap.id,
-              ...followedSnap.data()
-            };
+            if (!capitulosSnap.docs?.length) {
+              try {
+                capitulosSnap = await getDocs(
+                  collection(db, "historias", obraId, "capitulos")
+                );
+              } catch {
+                capitulosSnap = { docs: [] };
+              }
+            }
 
-            const capitulosSnap = await getDocs(
-              collection(db, "historias", historiaId, "capitulos")
-            );
             const capitulosData = capitulosSnap.docs.map((capituloDoc) => ({
               id: capituloDoc.id,
               ...capituloDoc.data()
@@ -254,7 +280,7 @@ export default function Perfil() {
             const capitulosVisibles = getDisplayChapters(historia, capitulosData);
             const ultimoCapituloDisponible =
               capitulosVisibles[capitulosVisibles.length - 1] || null;
-            const progreso = progresoLectura[historiaId] || null;
+            const progreso = progresoMap.get(obraId) || progresoLectura[obraId] || null;
 
             return {
               ...historia,
@@ -303,6 +329,7 @@ export default function Perfil() {
       historias: historiasCreadas.length,
       traducciones: traduccionesSubidas.length,
       seguidas: historiasSeguidas.length,
+      capitulosLeidos: Number(perfilUsuario.capitulosLeidos || 0) || 0,
       vistas: publicaciones.reduce(
         (total, historia) => total + getViewsCount(historia),
         0
@@ -316,7 +343,13 @@ export default function Perfil() {
         0
       )
     }),
-    [historiasCreadas, historiasSeguidas.length, publicaciones, traduccionesSubidas.length]
+    [
+      historiasCreadas,
+      historiasSeguidas.length,
+      perfilUsuario.capitulosLeidos,
+      publicaciones,
+      traduccionesSubidas.length
+    ]
   );
 
   const guardarPerfil = async () => {
@@ -444,6 +477,10 @@ export default function Perfil() {
         <span>
           <strong>{estadisticas.seguidas}</strong>
           seguidas
+        </span>
+        <span>
+          <strong>{estadisticas.capitulosLeidos}</strong>
+          capitulos leidos
         </span>
         <span>
           <strong>{estadisticas.vistas}</strong>

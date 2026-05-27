@@ -8,6 +8,7 @@ import {
   getStoryType,
   isTranslation
 } from "../utils/storyUtils";
+import { getCreatorName } from "../utils/displayUtils";
 
 const getCoverUrl = (historia) =>
   historia.portadaUrl ||
@@ -25,11 +26,7 @@ const getAuthorAvatar = (historia) =>
   "";
 
 const getAuthorName = (historia) =>
-  historia.autor ||
-  historia.autorNombre ||
-  historia.creadoPorNombre ||
-  historia.autorOriginal ||
-  "Autor desconocido";
+  getCreatorName(historia) || historia.autorOriginal || "Autor desconocido";
 
 const getStoryRoute = (historia) =>
   historia.route ||

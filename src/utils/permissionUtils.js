@@ -3,6 +3,8 @@ export const normalizeIdentity = (value = "") =>
     ? String(value).trim().toLowerCase()
     : String(value).trim();
 
+export const isAdmin = (profile = {}) => profile?.rol === "admin";
+
 export const normalizeCollaborators = (value) => {
   if (!value) return [];
 
@@ -25,8 +27,9 @@ export const getCollaborators = (historia) =>
       : [])
   ]);
 
-export const userCanManageStory = (user, historia) => {
+export const userCanManageStory = (user, historia, profile = {}) => {
   if (!user || !historia) return false;
+  if (isAdmin(profile)) return true;
   if (historia.autorId === user.uid) return true;
   if (historia.creadoPor === user.uid) return true;
 
@@ -38,4 +41,11 @@ export const userCanManageStory = (user, historia) => {
 export const userCanEditCollaborators = (user, historia) =>
   Boolean(
     user && (historia?.autorId === user.uid || historia?.creadoPor === user.uid)
+  );
+
+export const userCanDeleteWork = (user, obra, profile = {}) =>
+  Boolean(
+    user &&
+      obra &&
+      (isAdmin(profile) || obra.autorId === user.uid || obra.creadoPor === user.uid)
   );

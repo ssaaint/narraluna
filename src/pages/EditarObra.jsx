@@ -10,9 +10,9 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import {
-  buildObraFromHistoria,
   OBRA_TYPE_EXTERNAL,
-  OBRA_TYPE_ORIGINAL
+  OBRA_TYPE_ORIGINAL,
+  buildObraFromHistoria
 } from "../utils/obraUtils";
 import {
   listOrEmpty,
@@ -21,6 +21,7 @@ import {
 } from "../utils/firestoreSafe";
 import {
   normalizeCollaborators,
+  userCanDeleteWork,
   userCanManageStory
 } from "../utils/permissionUtils";
 
@@ -45,6 +46,7 @@ export default function EditarObra() {
 
   const [obra, setObra] = useState(null);
   const [source, setSource] = useState("");
+  const [perfil, setPerfil] = useState({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [titulo, setTitulo] = useState("");
@@ -105,18 +107,35 @@ export default function EditarObra() {
 
         setObra(null);
       } catch (error) {
-        console.error(error);
+        console.error("Error completo:", error);
       } finally {
         setLoading(false);
       }
     };
 
+    const cargarPerfil = async () => {
+      if (!auth.currentUser) {
+        setPerfil({});
+        return;
+      }
+
+      try {
+        const perfilSnap = await getDoc(doc(db, "usuarios", auth.currentUser.uid));
+        setPerfil(perfilSnap.exists() ? perfilSnap.data() : {});
+      } catch (error) {
+        console.error("No se pudo cargar el perfil para permisos:", error);
+        setPerfil({});
+      }
+    };
+
     if (obraId) {
       cargarObra();
+      cargarPerfil();
     }
   }, [obraId]);
 
-  const puedeEditar = userCanManageStory(auth.currentUser, obra);
+  const puedeEditar = userCanManageStory(auth.currentUser, obra, perfil);
+  const puedeBorrar = userCanDeleteWork(auth.currentUser, obra, perfil);
   const esObraExterna = obra?.tipo === OBRA_TYPE_EXTERNAL;
 
   const buildUpdatePayload = () => {
@@ -158,7 +177,7 @@ export default function EditarObra() {
     }
 
     if (!puedeEditar) {
-      alert("No tenés permisos para editar esta historia.");
+      alert("No tenes permisos para editar esta obra.");
       return;
     }
 
@@ -193,10 +212,10 @@ export default function EditarObra() {
         }
       }
 
-      alert("Historia actualizada");
+      alert("Obra actualizada");
       navigate(`/obra/${obraId}`);
     } catch (error) {
-      console.error("Error completo al editar historia:", error);
+      console.error("Error completo:", error);
       alert(error.message || "Error desconocido al editar");
     } finally {
       setSaving(false);
@@ -210,7 +229,7 @@ export default function EditarObra() {
     }
 
     if (!puedeEditar) {
-      alert("No tenés permisos para editar esta historia.");
+      alert("No tenes permisos para editar esta obra.");
       return;
     }
 
@@ -254,8 +273,58 @@ export default function EditarObra() {
       alert("Historia migrada a obras sin borrar la original");
       navigate(`/obra/${obraId}`);
     } catch (error) {
-      console.error("Error completo al migrar historia:", error);
+      console.error("Error completo:", error);
       alert(error.message || "Error desconocido al migrar");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const eliminarObra = async () => {
+    if (!auth.currentUser || !puedeBorrar) {
+      alert("No tenes permisos para eliminar esta obra.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "¿Seguro que querés eliminar esta obra? Esta acción no se puede deshacer."
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setSaving(true);
+      const now = new Date();
+
+      await setDoc(
+        doc(db, "obras", obraId),
+        safeFirestorePayload({
+          estado: "eliminada",
+          deletedAt: now,
+          deletedBy: auth.currentUser.uid,
+          fechaActualizacion: now,
+          updatedAt: now
+        }),
+        { merge: true }
+      );
+
+      if (source === "historias") {
+        try {
+          await updateDoc(doc(db, "historias", obraId), {
+            estado: "eliminada",
+            deletedAt: now,
+            deletedBy: auth.currentUser.uid,
+            updatedAt: now
+          });
+        } catch (legacyError) {
+          console.error("No se pudo marcar la historia antigua como eliminada:", legacyError);
+        }
+      }
+
+      navigate("/explorar");
+    } catch (error) {
+      console.error("Error completo:", error);
+      alert(error.message || "Error desconocido");
     } finally {
       setSaving(false);
     }
@@ -270,7 +339,7 @@ export default function EditarObra() {
   }
 
   if (!auth.currentUser || !puedeEditar) {
-    return <p className="page">No tenés permisos para editar esta historia.</p>;
+    return <p className="page">No tenes permisos para editar esta obra.</p>;
   }
 
   return (
@@ -282,7 +351,7 @@ export default function EditarObra() {
       <p className="section-kicker">
         {source === "historias" ? "Historia antigua" : "Obra"}
       </p>
-      <h2>Editar historia</h2>
+      <h2>Editar obra</h2>
 
       <input
         placeholder="Titulo"
@@ -325,7 +394,7 @@ export default function EditarObra() {
           {portadaUrl ? (
             <img src={portadaUrl} alt="Vista previa de portada" />
           ) : (
-            <span>{(titulo || "N").slice(0, 1).toUpperCase()}</span>
+            <span>{(titulo || "U").slice(0, 1).toUpperCase()}</span>
           )}
         </div>
         <p>Vista previa de portada</p>
@@ -403,6 +472,17 @@ export default function EditarObra() {
             disabled={saving}
           >
             Migrar a obras
+          </button>
+        )}
+
+        {puedeBorrar && (
+          <button
+            type="button"
+            className="btn-danger"
+            onClick={eliminarObra}
+            disabled={saving}
+          >
+            Eliminar obra
           </button>
         )}
       </div>
