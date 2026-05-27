@@ -1,340 +1,381 @@
 import { useEffect, useMemo, useState } from "react";
-import { collection, getDocs } from "firebase/firestore";
-import { db } from "../firebase";
-import heroImage from "../assets/hero.png";
-import StoryCard from "../components/StoryCard";
+import { Link } from "react-router-dom";
 import {
-  ALL_FILTER,
+  collection,
+  collectionGroup,
+  doc,
+  getDoc,
+  getDocs
+} from "firebase/firestore";
+import StoryCard from "../components/StoryCard";
+import { auth, db } from "../firebase";
+import {
   getLikesCount,
   getStoryGenres,
-  getStoryType,
+  isOriginal,
+  isTranslation,
   sortByDate,
   sortByLikes,
-  storyMatchesFilters,
-  storyMatchesSearch,
   uniqueList
 } from "../utils/storyUtils";
+import { buildLibraryItems } from "../utils/libraryUtils";
 
-const initialFilters = {
-  genero: ALL_FILTER,
-  tipo: ALL_FILTER,
-  popularidad: ALL_FILTER
+const take = (items, count = 4) => items.slice(0, count);
+
+const getDateValue = (value) => {
+  if (!value) return 0;
+  if (typeof value.toMillis === "function") return value.toMillis();
+  if (typeof value.toDate === "function") return value.toDate().getTime();
+  if (typeof value.seconds === "number") return value.seconds * 1000;
+
+  const parsed = Date.parse(value);
+  return Number.isNaN(parsed) ? 0 : parsed;
 };
 
-const popularityOptions = [
-  { value: ALL_FILTER, label: "Todas" },
-  { value: "populares", label: "Más populares" },
-  { value: "con-likes", label: "Con likes" },
-  { value: "sin-likes", label: "Sin likes" }
-];
+const getProgressDate = (progreso) =>
+  getDateValue(progreso.fechaLectura || progreso.vistoEn || progreso.updatedAt);
 
-export default function Home({ busqueda = "" }) {
-  const [historias, setHistorias] = useState({ top: [], otras: [] });
-  const [filtros, setFiltros] = useState(initialFilters);
+export default function Home() {
+  const [biblioteca, setBiblioteca] = useState([]);
+  const [continuarLeyendo, setContinuarLeyendo] = useState([]);
+  const [traduccionesHome, setTraduccionesHome] = useState([]);
 
   useEffect(() => {
-    const obtenerHistorias = async () => {
+    const cargarHome = async () => {
       try {
-        const querySnapshot = await getDocs(collection(db, "historias"));
+        const [historiasResult, obrasResult] = await Promise.allSettled([
+          getDocs(collection(db, "historias")),
+          getDocs(collection(db, "obras"))
+        ]);
+        const historiasDocs =
+          historiasResult.status === "fulfilled" ? historiasResult.value.docs : [];
+        const obrasDocs =
+          obrasResult.status === "fulfilled" ? obrasResult.value.docs : [];
 
-        const datos = querySnapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data()
-        }));
+        if (historiasResult.status === "rejected") {
+          console.error("No se pudieron cargar historias antiguas:", historiasResult.reason);
+        }
 
-        const ordenadasPorLikes = sortByLikes(datos);
+        if (obrasResult.status === "rejected") {
+          console.error("No se pudieron cargar obras:", obrasResult.reason);
+        }
 
-        setHistorias({
-          top: ordenadasPorLikes.slice(0, 3),
-          otras: ordenadasPorLikes.slice(3)
-        });
+        const libraryItems = buildLibraryItems(obrasDocs, historiasDocs);
+
+        setBiblioteca(libraryItems);
+
+        try {
+          const traduccionesSnap = await getDocs(collectionGroup(db, "traducciones"));
+          const traduccionesData = traduccionesSnap.docs.map((traduccionDoc) => {
+            const obraId = traduccionDoc.ref.parent.parent?.id || "";
+            const obra = libraryItems.find((item) => item.id === obraId) || {};
+            const data = traduccionDoc.data();
+
+            return {
+              id: traduccionDoc.id,
+              obraId,
+              route: obraId ? `/obra/${obraId}` : "/traducir",
+              tipo: "traduccion",
+              titulo: data.titulo || `${obra.titulo || "Obra"} - traduccion`,
+              descripcion: obra.titulo
+                ? `Traduccion de ${obra.titulo}`
+                : "Traduccion pendiente",
+              generos: obra.generos || [],
+              etiquetas: obra.etiquetas || [],
+              portada: obra.portada || "",
+              portadaUrl: obra.portadaUrl || obra.portada || "",
+              autor:
+                data.traductorPrincipalNombre ||
+                data.traductorEmail ||
+                "Traductor registrado",
+              idiomaDestino: data.idiomaDestino || "",
+              fecha: data.updatedAt || data.fecha || data.fechaSubida || null,
+              updatedAt: data.updatedAt || data.fecha || null,
+              estado: data.estado || "pendiente"
+            };
+          });
+
+          setTraduccionesHome(sortByDate(traduccionesData));
+        } catch {
+          setTraduccionesHome([]);
+        }
+
+        if (auth.currentUser) {
+          const perfilRef = doc(db, "usuarios", auth.currentUser.uid);
+          const perfilSnap = await getDoc(perfilRef);
+          const perfilData = perfilSnap.exists() ? perfilSnap.data() : {};
+          const progresoLegacy = perfilData.progresoLectura || {};
+          const progresoMap = new Map(
+            Object.entries(progresoLegacy).map(([obraId, progreso]) => [
+              obraId,
+              {
+                obraId,
+                ...progreso
+              }
+            ])
+          );
+
+          try {
+            const progresoSnap = await getDocs(
+              collection(db, "usuarios", auth.currentUser.uid, "progreso")
+            );
+
+            progresoSnap.docs.forEach((progresoDoc) => {
+              progresoMap.set(progresoDoc.id, {
+                obraId: progresoDoc.id,
+                ...progresoDoc.data()
+              });
+            });
+          } catch {
+            // La compatibilidad con progresoLectura cubre proyectos sin subcoleccion.
+          }
+
+          const lecturas = [...progresoMap.values()]
+            .sort((a, b) => getProgressDate(b) - getProgressDate(a))
+            .slice(0, 6)
+            .map((progreso) => {
+              const obraId = progreso.obraId || progreso.historiaId;
+              const item = libraryItems.find((obra) => obra.id === obraId);
+
+              if (!item) return null;
+
+              return {
+                ...item,
+                progresoLectura: progreso,
+                continueRoute:
+                  progreso.ruta ||
+                  (progreso.traduccionId
+                    ? `/obra/${obraId}/traducciones/${progreso.traduccionId}/capitulo/${progreso.capituloId || progreso.ultimoCapituloId}`
+                    : `/obra/${obraId}/capitulo/${progreso.capituloId || progreso.ultimoCapituloId}`)
+              };
+            });
+
+          setContinuarLeyendo(lecturas.filter(Boolean));
+        }
       } catch (error) {
         console.error(error);
       }
     };
 
-    obtenerHistorias();
+    cargarHome();
   }, []);
 
-  const todasLasHistorias = useMemo(
-    () => [...historias.top, ...historias.otras],
-    [historias]
-  );
-
-  const generos = useMemo(
-    () => uniqueList(todasLasHistorias.flatMap(getStoryGenres)),
-    [todasLasHistorias]
-  );
-
-  const tipos = useMemo(
-    () => uniqueList(todasLasHistorias.map(getStoryType)),
-    [todasLasHistorias]
-  );
-
-  const filtrosActivos =
-    busqueda.trim() ||
-    filtros.genero !== ALL_FILTER ||
-    filtros.tipo !== ALL_FILTER ||
-    filtros.popularidad !== ALL_FILTER;
-
-  const historiasExploradas = useMemo(() => {
-    const base = filtrosActivos ? todasLasHistorias : historias.otras;
-
-    const filtradas = base.filter(
-      (historia) =>
-        storyMatchesSearch(historia, busqueda) &&
-        storyMatchesFilters(historia, filtros)
-    );
-
-    return filtros.popularidad === "populares" ? sortByLikes(filtradas) : filtradas;
-  }, [busqueda, filtros, filtrosActivos, historias.otras, todasLasHistorias]);
-
-  const recientes = useMemo(
-    () => sortByDate(todasLasHistorias).slice(0, 4),
-    [todasLasHistorias]
-  );
-
   const populares = useMemo(
-    () => sortByLikes(todasLasHistorias).slice(0, 4),
-    [todasLasHistorias]
+    () => take(sortByLikes(biblioteca), 4),
+    [biblioteca]
   );
-
-  const generosConConteo = useMemo(
+  const masLikeadas = useMemo(
     () =>
-      generos.map((genero) => ({
-        genero,
-        total: todasLasHistorias.filter((historia) =>
-          getStoryGenres(historia).includes(genero)
-        ).length
-      })),
-    [generos, todasLasHistorias]
+      take(
+        sortByLikes(biblioteca).filter((historia) => getLikesCount(historia) > 0),
+        4
+      ),
+    [biblioteca]
   );
-
-  const historiaPrincipal = historias.top[0];
-  const totalLikes = todasLasHistorias.reduce(
-    (total, historia) => total + getLikesCount(historia),
-    0
+  const actualizadas = useMemo(
+    () => take(sortByDate(biblioteca), 4),
+    [biblioteca]
   );
-
-  const updateFilter = (name, value) => {
-    setFiltros((current) => ({
-      ...current,
-      [name]: value
-    }));
-  };
-
-  const selectGenero = (genero) => {
-    setFiltros((current) => ({
-      ...current,
-      genero
-    }));
-  };
+  const originalesNuevas = useMemo(
+    () => take(sortByDate(biblioteca.filter(isOriginal)), 4),
+    [biblioteca]
+  );
+  const traduccionesRecientes = useMemo(
+    () =>
+      take(
+        sortByDate([
+          ...traduccionesHome,
+          ...biblioteca.filter((item) => isTranslation(item))
+        ]),
+        4
+      ),
+    [biblioteca, traduccionesHome]
+  );
+  const generosDestacados = useMemo(
+    () =>
+      uniqueList(biblioteca.flatMap(getStoryGenres))
+        .map((genero) => ({
+          genero,
+          total: biblioteca.filter((historia) =>
+            getStoryGenres(historia).includes(genero)
+          ).length
+        }))
+        .sort((a, b) => b.total - a.total)
+        .slice(0, 8),
+    [biblioteca]
+  );
 
   return (
     <main className="page page-home">
-      <section className="home-hero">
+      <section className="home-hero home-hero-minimal">
         <div className="home-hero-copy">
           <p className="section-kicker">Narraluna</p>
           <h1>Narraluna</h1>
-          <p>
-            Un refugio para historias nocturnas, autores cercanos y lecturas
-            que crecen con cada like.
-          </p>
+          <p>Escribi, lee y trascende.</p>
 
           <div className="hero-actions">
-            <a href="#explorar" className="btn-link btn-link-primary">
+            <Link to="/explorar" className="btn-link btn-link-primary">
               Explorar historias
-            </a>
-            <a href="#destacadas" className="btn-link btn-link-ghost">
-              Ver ranking
-            </a>
+            </Link>
+            <Link to="/crear" className="btn-link btn-link-ghost">
+              Crear historia
+            </Link>
           </div>
-
-          <div className="hero-stats">
-            <span>
-              <strong>{todasLasHistorias.length}</strong>
-              historias
-            </span>
-            <span>
-              <strong>{totalLikes}</strong>
-              likes
-            </span>
-            <span>
-              <strong>{generos.length}</strong>
-              géneros
-            </span>
-          </div>
-        </div>
-
-        <div className="home-hero-visual">
-          <img src={heroImage} alt="" />
-
-          {historiaPrincipal && (
-            <div className="hero-spotlight">
-              <span>Top de la luna</span>
-              <strong>{historiaPrincipal.titulo}</strong>
-              <p>{historiaPrincipal.autor}</p>
-            </div>
-          )}
         </div>
       </section>
 
-      <section id="destacadas" className="home-section">
-        <div className="section-heading">
-          <p className="section-kicker">Ranking actual</p>
-          <h2>Historias destacadas</h2>
-        </div>
+      <DashboardSection
+        kicker="Tu lectura"
+        title="Continuar leyendo"
+        empty="Inicia sesion y lee capitulos para ver tu progreso aca."
+      >
+        {continuarLeyendo.map((historia) => (
+          <ContinueReadingCard key={historia.id} historia={historia} />
+        ))}
+      </DashboardSection>
 
-        <div className="featured-grid">
-          {historias.top.map((historia, index) => (
+      <DashboardSection
+        kicker="Ranking"
+        title="Populares"
+        empty="Todavia no hay historias populares."
+      >
+        {populares.map((historia, index) => (
+          <StoryCard
+            key={historia.id}
+            historia={historia}
+            destacado={index < 3}
+            posicion={index + 1}
+            resumenCaracteres={100}
+          />
+        ))}
+      </DashboardSection>
+
+      <div className="home-lists">
+        <DashboardSection
+          kicker="Favoritas"
+          title="Mas likeadas"
+          empty="Todavia no hay historias con likes."
+          compact
+        >
+          {masLikeadas.map((historia) => (
+            <StoryCard key={historia.id} historia={historia} compact />
+          ))}
+        </DashboardSection>
+
+        <DashboardSection
+          kicker="Novedades"
+          title="Actualizadas recientemente"
+          empty="Todavia no hay actualizaciones."
+          compact
+        >
+          {actualizadas.map((historia) => (
+            <StoryCard key={historia.id} historia={historia} compact />
+          ))}
+        </DashboardSection>
+      </div>
+
+      <div className="home-lists">
+        <DashboardSection
+          kicker="Originales"
+          title="Nuevas historias originales"
+          empty="Todavia no hay originales."
+          compact
+        >
+          {originalesNuevas.map((historia) => (
+            <StoryCard key={historia.id} historia={historia} compact />
+          ))}
+        </DashboardSection>
+
+        <DashboardSection
+          kicker="Traducciones"
+          title="Traducciones recientes"
+          empty="Todavia no hay traducciones."
+          compact
+        >
+          {traduccionesRecientes.map((historia) => (
             <StoryCard
-              key={historia.id}
+              key={`${historia.obraId || historia.source || "traduccion"}-${historia.id}`}
               historia={historia}
-              destacado
-              posicion={index + 1}
-              resumenCaracteres={130}
+              compact
             />
           ))}
-        </div>
-      </section>
-
-      <section id="explorar" className="home-section">
-        <div className="section-heading">
-          <p className="section-kicker">Biblioteca</p>
-          <h2>Explorar historias</h2>
-        </div>
-
-        <div className="filters-panel">
-          <label className="filter-field">
-            <span>Género</span>
-            <select
-              value={filtros.genero}
-              onChange={(event) => updateFilter("genero", event.target.value)}
-            >
-              <option value={ALL_FILTER}>Todos</option>
-              {generos.map((genero) => (
-                <option key={genero} value={genero}>
-                  {genero}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="filter-field">
-            <span>Tipo</span>
-            <select
-              value={filtros.tipo}
-              onChange={(event) => updateFilter("tipo", event.target.value)}
-            >
-              <option value={ALL_FILTER}>Todos</option>
-              {tipos.map((tipo) => (
-                <option key={tipo} value={tipo}>
-                  {tipo}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <label className="filter-field">
-            <span>Popularidad</span>
-            <select
-              value={filtros.popularidad}
-              onChange={(event) =>
-                updateFilter("popularidad", event.target.value)
-              }
-            >
-              {popularityOptions.map((option) => (
-                <option key={option.value} value={option.value}>
-                  {option.label}
-                </option>
-              ))}
-            </select>
-          </label>
-
-          <button
-            type="button"
-            className="btn-filter-reset"
-            onClick={() => setFiltros(initialFilters)}
-          >
-            Limpiar
-          </button>
-        </div>
-
-        <p className="result-count">
-          {historiasExploradas.length} historias encontradas
-        </p>
-
-        {historiasExploradas.length > 0 ? (
-          <div className="grid explore-grid">
-            {historiasExploradas.map((historia) => (
-              <StoryCard key={historia.id} historia={historia} />
-            ))}
-          </div>
-        ) : (
-          <p className="empty-state">No hay historias para esos filtros.</p>
-        )}
-      </section>
+        </DashboardSection>
+      </div>
 
       <section className="home-section">
         <div className="section-heading">
           <p className="section-kicker">Mapa de lectura</p>
-          <h2>Géneros</h2>
+          <h2>Generos destacados</h2>
         </div>
 
-        <div className="genre-grid">
-          {generosConConteo.map(({ genero, total }) => (
-            <button
-              key={genero}
-              type="button"
-              className={`genre-tile${
-                filtros.genero === genero ? " genre-tile-active" : ""
-              }`}
-              onClick={() => selectGenero(genero)}
-            >
-              <span>{genero}</span>
-              <strong>{total}</strong>
-            </button>
-          ))}
-        </div>
+        {generosDestacados.length > 0 ? (
+          <div className="genre-grid">
+            {generosDestacados.map(({ genero, total }) => (
+              <Link
+                key={genero}
+                to={`/explorar?genero=${encodeURIComponent(genero)}`}
+                className="genre-tile genre-tile-link"
+              >
+                <span>{genero}</span>
+                <strong>{total}</strong>
+              </Link>
+            ))}
+          </div>
+        ) : (
+          <p className="empty-state">Todavia no hay generos destacados.</p>
+        )}
       </section>
-
-      <div className="home-lists">
-        <section className="home-section">
-          <div className="section-heading">
-            <p className="section-kicker">Novedades</p>
-            <h2>Recientes</h2>
-          </div>
-
-          <div className="compact-story-list">
-            {recientes.map((historia) => (
-              <StoryCard
-                key={historia.id}
-                historia={historia}
-                resumenCaracteres={90}
-                compact
-              />
-            ))}
-          </div>
-        </section>
-
-        <section className="home-section">
-          <div className="section-heading">
-            <p className="section-kicker">Lecturas con más likes</p>
-            <h2>Populares</h2>
-          </div>
-
-          <div className="compact-story-list">
-            {populares.map((historia) => (
-              <StoryCard
-                key={historia.id}
-                historia={historia}
-                resumenCaracteres={90}
-                compact
-              />
-            ))}
-          </div>
-        </section>
-      </div>
     </main>
+  );
+}
+
+function DashboardSection({ kicker, title, empty, children, compact = false }) {
+  const visibleChildren = Array.isArray(children)
+    ? children.flat(Infinity).filter(Boolean)
+    : children
+      ? [children]
+      : [];
+
+  return (
+    <section className="home-section">
+      <div className="section-heading">
+        <p className="section-kicker">{kicker}</p>
+        <h2>{title}</h2>
+      </div>
+
+      {visibleChildren.length > 0 ? (
+        <div className={compact ? "compact-story-list" : "grid explore-grid"}>
+          {visibleChildren}
+        </div>
+      ) : (
+        <p className="empty-state">{empty}</p>
+      )}
+    </section>
+  );
+}
+
+function ContinueReadingCard({ historia }) {
+  const progreso = historia.progresoLectura || {};
+  const continuarRuta =
+    historia.continueRoute || progreso.ruta || `/obra/${historia.id}`;
+
+  return (
+    <article className="continue-card">
+      <div>
+        <p className="section-kicker">Continuar</p>
+        <h3>{historia.titulo || "Sin titulo"}</h3>
+        <p>
+          {progreso.tituloCapitulo || progreso.ultimoCapituloTitulo
+            ? `Ultimo: ${progreso.tituloCapitulo || progreso.ultimoCapituloTitulo}`
+            : "Sin capitulo registrado"}
+        </p>
+        {progreso.ultimoDisponibleNumero && (
+          <p>Disponible hasta capitulo {progreso.ultimoDisponibleNumero}</p>
+        )}
+      </div>
+      <Link to={continuarRuta} className="btn-link btn-link-primary">
+        Continuar
+      </Link>
+    </article>
   );
 }

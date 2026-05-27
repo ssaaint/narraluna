@@ -1,29 +1,44 @@
-import { Link } from "react-router-dom";
-import SearchBar from "./SearchBar";
+import { Link, NavLink } from "react-router-dom";
+import NotificationBell from "./NotificationBell";
 
-export default function Navbar({ user, busqueda, onBusquedaChange, onLogout }) {
+const navClass = ({ isActive }) => `nav-link${isActive ? " nav-link-active" : ""}`;
+
+export default function Navbar({ user, onLogout }) {
   return (
     <nav className="navbar">
       <Link to="/" className="logo">
-        <span className="moon">🌙</span>
+        <span className="moon">NL</span>
         Narraluna
       </Link>
 
       <div className="nav-right">
-        <SearchBar value={busqueda} onChange={onBusquedaChange} />
-
-        <Link to="/">Inicio</Link>
-        <Link to="/crear">Crear</Link>
+        <NavLink to="/" end className={navClass}>
+          Inicio
+        </NavLink>
+        <NavLink to="/explorar" className={navClass}>
+          Explorar
+        </NavLink>
+        <NavLink to="/crear" className={navClass}>
+          Crear
+        </NavLink>
+        <NavLink to="/traducir" className={navClass}>
+          Obras traducibles
+        </NavLink>
 
         {user ? (
           <>
-            <Link to="/perfil">Perfil</Link>
-            <button onClick={onLogout} className="btn-logout">
+            <NotificationBell user={user} />
+            <NavLink to="/perfil" className={navClass}>
+              Perfil
+            </NavLink>
+            <button onClick={onLogout} className="nav-link nav-button">
               Salir
             </button>
           </>
         ) : (
-          <Link to="/login">Login</Link>
+          <NavLink to="/login" className={navClass}>
+            Login
+          </NavLink>
         )}
       </div>
     </nav>

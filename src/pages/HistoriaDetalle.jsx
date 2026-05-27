@@ -1,6 +1,19 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { collection, doc, getDoc, getDocs, updateDoc } from "firebase/firestore";
+import {
+  arrayRemove,
+  arrayUnion,
+  collection,
+  doc,
+  getCountFromServer,
+  getDoc,
+  getDocs,
+  orderBy,
+  query,
+  runTransaction,
+  setDoc,
+  updateDoc
+} from "firebase/firestore";
 import { auth, db } from "../firebase";
 import {
   LEGACY_CHAPTER_ID,
@@ -8,10 +21,14 @@ import {
   getDisplayChapters
 } from "../utils/chapterUtils";
 import {
+  getCommentsCount,
+  getLikesCount,
   getStoryDescription,
   getStoryGenres,
+  getStoryStatus,
   getStoryTags,
-  getStoryType
+  getStoryType,
+  isTranslation
 } from "../utils/storyUtils";
 import { getStorySlug } from "../utils/slugUtils";
 import {
@@ -20,6 +37,38 @@ import {
   userCanEditCollaborators,
   userCanManageStory
 } from "../utils/permissionUtils";
+import { canUploadTranslatedChapter } from "../utils/translationUtils";
+import {
+  notifyStoryOwnerOfComment,
+  notifyStoryOwnerOfLike
+} from "../utils/notificationUtils";
+
+const getCommentDateValue = (comentario) => {
+  const fecha = comentario?.fecha || comentario?.createdAt;
+
+  if (!fecha) return 0;
+  if (typeof fecha.toMillis === "function") return fecha.toMillis();
+  if (typeof fecha.toDate === "function") return fecha.toDate().getTime();
+  if (typeof fecha.seconds === "number") return fecha.seconds * 1000;
+
+  const parsed = Date.parse(fecha);
+  return Number.isNaN(parsed) ? 0 : parsed;
+};
+
+const sortComments = (comentarios) =>
+  [...comentarios].sort(
+    (a, b) => getCommentDateValue(a) - getCommentDateValue(b)
+  );
+
+const getLegacyComments = (historia) =>
+  Array.isArray(historia.comentarios)
+    ? historia.comentarios.map((comentario, index) => ({
+        id: `legacy-${index}`,
+        legacy: true,
+        scope: "historia",
+        ...comentario
+      }))
+    : [];
 
 export default function HistoriaDetalle() {
   const { id } = useParams();
@@ -27,10 +76,13 @@ export default function HistoriaDetalle() {
   const [historia, setHistoria] = useState(null);
   const [capitulos, setCapitulos] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [likes, setLikes] = useState([]);
+  const [likesCount, setLikesCount] = useState(0);
+  const [likedByUser, setLikedByUser] = useState(false);
   const [comentarios, setComentarios] = useState([]);
+  const [comentariosCount, setComentariosCount] = useState(0);
   const [nuevoComentario, setNuevoComentario] = useState("");
   const [colaboradoresInput, setColaboradoresInput] = useState("");
+  const [siguiendo, setSiguiendo] = useState(false);
 
   useEffect(() => {
     const cargarHistoria = async () => {
@@ -56,12 +108,84 @@ export default function HistoriaDetalle() {
           id: capituloDoc.id,
           ...capituloDoc.data()
         }));
+        const legacyLikes = Array.isArray(historiaData.likes)
+          ? historiaData.likes
+          : [];
+        const legacyComments = getLegacyComments(historiaData);
+        let likesSubcollectionCount = 0;
+        let commentsSubcollectionCount = 0;
+        let storyComments = [];
+        let userLiked = false;
+
+        try {
+          const likesCountSnap = await getCountFromServer(
+            collection(db, "historias", id, "likes")
+          );
+          likesSubcollectionCount = likesCountSnap.data().count;
+        } catch {
+          likesSubcollectionCount = 0;
+        }
+
+        try {
+          const commentsCountSnap = await getCountFromServer(
+            collection(db, "historias", id, "comentarios")
+          );
+          commentsSubcollectionCount = commentsCountSnap.data().count;
+        } catch {
+          commentsSubcollectionCount = 0;
+        }
+
+        try {
+          const commentsSnap = await getDocs(
+            query(
+              collection(db, "historias", id, "comentarios"),
+              orderBy("fecha", "asc")
+            )
+          );
+          storyComments = commentsSnap.docs
+            .map((comentarioDoc) => ({
+              id: comentarioDoc.id,
+              ...comentarioDoc.data()
+            }))
+            .filter((comentario) => !comentario.capituloId);
+        } catch {
+          storyComments = [];
+        }
+
+        if (auth.currentUser) {
+          try {
+            const likeSnap = await getDoc(
+              doc(db, "historias", id, "likes", auth.currentUser.uid)
+            );
+            userLiked =
+              likeSnap.exists() || legacyLikes.includes(auth.currentUser.uid);
+          } catch {
+            userLiked = legacyLikes.includes(auth.currentUser.uid);
+          }
+        }
 
         setHistoria(historiaData);
         setCapitulos(getDisplayChapters(historiaData, capitulosData));
-        setLikes(historiaData.likes || []);
-        setComentarios(historiaData.comentarios || []);
+        setLikesCount(
+          Math.max(getLikesCount(historiaData), likesSubcollectionCount)
+        );
+        setLikedByUser(userLiked);
+        setComentarios(sortComments([...legacyComments, ...storyComments]));
+        setComentariosCount(
+          Math.max(
+            getCommentsCount(historiaData),
+            legacyComments.length + commentsSubcollectionCount
+          )
+        );
         setColaboradoresInput(getCollaborators(historiaData).join("\n"));
+
+        if (auth.currentUser) {
+          const perfilSnap = await getDoc(doc(db, "usuarios", auth.currentUser.uid));
+          const perfilData = perfilSnap.exists() ? perfilSnap.data() : {};
+          setSiguiendo((perfilData.historiasSeguidas || []).includes(id));
+        } else {
+          setSiguiendo(false);
+        }
       } catch (error) {
         console.error(error);
       } finally {
@@ -81,16 +205,71 @@ export default function HistoriaDetalle() {
     }
 
     const userId = auth.currentUser.uid;
-    const nuevosLikes = likes.includes(userId)
-      ? likes.filter((likeId) => likeId !== userId)
-      : [...likes, userId];
-
-    setLikes(nuevosLikes);
+    const historiaRef = doc(db, "historias", id);
+    const likeRef = doc(db, "historias", id, "likes", userId);
 
     try {
-      await updateDoc(doc(db, "historias", id), {
-        likes: nuevosLikes
+      const resultado = await runTransaction(db, async (transaction) => {
+        const historiaTransactionSnap = await transaction.get(historiaRef);
+        const likeSnap = await transaction.get(likeRef);
+
+        if (!historiaTransactionSnap.exists()) {
+          throw new Error("La historia ya no existe");
+        }
+
+        const historiaActual = historiaTransactionSnap.data();
+        const legacyLikes = Array.isArray(historiaActual.likes)
+          ? historiaActual.likes
+          : [];
+        const yaDioLike = likeSnap.exists() || legacyLikes.includes(userId);
+        const conteoActual = Math.max(getLikesCount(historiaActual), likesCount);
+        const siguienteConteo = yaDioLike
+          ? Math.max(conteoActual - 1, 0)
+          : conteoActual + 1;
+
+        if (yaDioLike) {
+          if (likeSnap.exists()) {
+            transaction.delete(likeRef);
+          }
+
+          transaction.update(historiaRef, {
+            likes: arrayRemove(userId),
+            likesCount: siguienteConteo,
+            updatedAt: new Date()
+          });
+        } else {
+          transaction.set(likeRef, {
+            userId,
+            userEmail: auth.currentUser.email,
+            fecha: new Date()
+          });
+          transaction.update(historiaRef, {
+            likesCount: siguienteConteo,
+            updatedAt: new Date()
+          });
+        }
+
+        return {
+          liked: !yaDioLike,
+          likesCount: siguienteConteo,
+          shouldNotify: !yaDioLike
+        };
       });
+
+      setLikedByUser(resultado.liked);
+      setLikesCount(resultado.likesCount);
+
+      if (resultado.shouldNotify) {
+        try {
+          await notifyStoryOwnerOfLike({
+            historiaId: id,
+            historia,
+            actor: auth.currentUser
+          });
+        } catch (notificationError) {
+          console.error(notificationError);
+        }
+      }
     } catch (error) {
       console.error(error);
     }
@@ -102,23 +281,61 @@ export default function HistoriaDetalle() {
       return;
     }
 
-    if (!nuevoComentario.trim()) return;
+    const texto = nuevoComentario.trim();
+
+    if (!texto) return;
 
     const comentario = {
-      texto: nuevoComentario,
+      texto,
+      autorId: auth.currentUser.uid,
       autor: auth.currentUser.email,
+      scope: "historia",
+      capituloId: "",
+      capituloTitulo: "",
       fecha: new Date()
     };
 
-    const nuevosComentarios = [...comentarios, comentario];
-
-    setComentarios(nuevosComentarios);
-    setNuevoComentario("");
-
     try {
-      await updateDoc(doc(db, "historias", id), {
-        comentarios: nuevosComentarios
+      const historiaRef = doc(db, "historias", id);
+      const comentarioRef = doc(collection(db, "historias", id, "comentarios"));
+
+      const siguienteConteo = await runTransaction(db, async (transaction) => {
+        const historiaTransactionSnap = await transaction.get(historiaRef);
+
+        if (!historiaTransactionSnap.exists()) {
+          throw new Error("La historia ya no existe");
+        }
+
+        const historiaActual = historiaTransactionSnap.data();
+        const conteoActual = Math.max(
+          getCommentsCount(historiaActual),
+          comentariosCount
+        );
+
+        transaction.set(comentarioRef, comentario);
+        transaction.update(historiaRef, {
+          comentariosCount: conteoActual + 1,
+          updatedAt: new Date()
+        });
+
+        return conteoActual + 1;
       });
+
+      setComentarios((current) =>
+        sortComments([...current, { id: comentarioRef.id, ...comentario }])
+      );
+      setComentariosCount(siguienteConteo);
+      setNuevoComentario("");
+
+      try {
+        await notifyStoryOwnerOfComment({
+          historiaId: id,
+          historia,
+          actor: auth.currentUser
+        });
+      } catch (notificationError) {
+        console.error(notificationError);
+      }
     } catch (error) {
       console.error(error);
     }
@@ -150,6 +367,57 @@ export default function HistoriaDetalle() {
     }
   };
 
+  const toggleSeguirHistoria = async () => {
+    if (!auth.currentUser) {
+      alert("Tenes que iniciar sesion");
+      return;
+    }
+
+    const perfilRef = doc(db, "usuarios", auth.currentUser.uid);
+
+    try {
+      if (siguiendo) {
+        await setDoc(
+          perfilRef,
+          {
+            historiasSeguidas: arrayRemove(id),
+            updatedAt: new Date()
+          },
+          { merge: true }
+        );
+        setSiguiendo(false);
+      } else {
+        const perfilSnap = await getDoc(perfilRef);
+        const perfilData = perfilSnap.exists() ? perfilSnap.data() : {};
+        const cambiosPerfil = {
+          historiasSeguidas: arrayUnion(id),
+          updatedAt: new Date()
+        };
+
+        if (!perfilData.progresoLectura?.[id]) {
+          cambiosPerfil[`progresoLectura.${id}`] = {
+            historiaId: id,
+            titulo: historia.titulo || "",
+            ultimoCapituloId: "",
+            ultimoCapituloTitulo: "",
+            ultimoCapituloOrden: 0,
+            vistoEn: null
+          };
+        }
+
+        await setDoc(
+          perfilRef,
+          cambiosPerfil,
+          { merge: true }
+        );
+        setSiguiendo(true);
+      }
+    } catch (error) {
+      console.error(error);
+      alert("No se pudo actualizar el seguimiento");
+    }
+  };
+
   if (loading) {
     return <p className="page">Cargando historia...</p>;
   }
@@ -165,6 +433,7 @@ export default function HistoriaDetalle() {
       : "Esta historia todavia no tiene descripcion.");
   const etiquetas = getStoryTags(historia);
   const puedeGestionar = userCanManageStory(auth.currentUser, historia);
+  const puedeSubirTraduccion = canUploadTranslatedChapter(auth.currentUser, historia);
   const puedeEditarColaboradores = userCanEditCollaborators(
     auth.currentUser,
     historia
@@ -175,19 +444,43 @@ export default function HistoriaDetalle() {
     <main className="page page-story-detail">
       <section className="story-detail-hero">
         <div>
-          <Link to="/" className="text-link">
-            Volver a explorar
-          </Link>
+          <div className="story-detail-links">
+            <Link to="/" className="text-link">
+              Volver a explorar
+            </Link>
+            <Link to={`/obra/${id}`} className="text-link">
+              Ver obra/serie
+            </Link>
+          </div>
 
           <p className="section-kicker">{getStoryType(historia)}</p>
           <h1>{historia.titulo || "Sin titulo"}</h1>
           <p className="story-detail-author">
             por {historia.autor || "Autor desconocido"}
           </p>
+          <div className="story-detail-cover">
+            {historia.portada ? (
+              <img src={historia.portada} alt={historia.titulo || "Portada"} />
+            ) : (
+              <span>{(historia.titulo || "N").slice(0, 1).toUpperCase()}</span>
+            )}
+          </div>
           <p className="story-detail-description">{descripcion}</p>
+
+          {isTranslation(historia) && (
+            <p className="story-translation-origin">
+              Traduccion de {historia.historiaOriginalTitulo || "historia original"}
+              {historia.idiomaDestino ? ` · idioma destino: ${historia.idiomaDestino}` : ""}
+            </p>
+          )}
 
           <div className="story-detail-tags">
             <span>/{getStorySlug(historia)}</span>
+            {getStoryStatus(historia) && (
+              <span className={`story-status story-status-${getStoryStatus(historia)}`}>
+                {getStoryStatus(historia)}
+              </span>
+            )}
             {getStoryGenres(historia).map((genero) => (
               <span key={genero}>{genero}</span>
             ))}
@@ -199,11 +492,11 @@ export default function HistoriaDetalle() {
 
         <aside className="story-stats-card">
           <span>
-            <strong>{likes.length}</strong>
+            <strong>{likesCount}</strong>
             likes
           </span>
           <span>
-            <strong>{comentarios.length}</strong>
+            <strong>{comentariosCount}</strong>
             comentarios
           </span>
           <span>
@@ -216,15 +509,19 @@ export default function HistoriaDetalle() {
           </span>
 
           <button onClick={toggleLike}>
-            {likes.includes(auth.currentUser?.uid) ? "Quitar Like" : "Me gusta"}
+            {likedByUser ? "Quitar Like" : "Me gusta"}
           </button>
 
-          {puedeGestionar && (
+          <button onClick={toggleSeguirHistoria} className="btn-follow-story">
+            {siguiendo ? "Dejar de seguir" : "Seguir historia"}
+          </button>
+
+          {(puedeGestionar || puedeSubirTraduccion) && (
             <Link
               to={`/historia/${id}/nuevo-capitulo`}
               className="btn-link btn-link-primary"
             >
-              Agregar capitulo
+              {isTranslation(historia) ? "Subir capitulo traducido" : "Agregar capitulo"}
             </Link>
           )}
         </aside>
@@ -245,11 +542,19 @@ export default function HistoriaDetalle() {
                   className="chapter-item"
                 >
                   <span>Capitulo {capitulo.orden}</span>
+                  {capitulo.estado && (
+                    <span className={`chapter-status story-status-${capitulo.estado}`}>
+                      {capitulo.estado}
+                    </span>
+                  )}
                   <strong>{capitulo.titulo}</strong>
                   <p>{getChapterPreview(capitulo)}</p>
                 </Link>
 
-                {puedeGestionar && capitulo.id !== LEGACY_CHAPTER_ID && (
+                {(puedeGestionar ||
+                  (isTranslation(historia) &&
+                    capitulo.traductorId === auth.currentUser?.uid)) &&
+                  capitulo.id !== LEGACY_CHAPTER_ID && (
                   <Link
                     to={`/historia/${id}/capitulo/${capitulo.id}/editar`}
                     className="chapter-edit-link"
@@ -306,8 +611,8 @@ export default function HistoriaDetalle() {
         <button onClick={agregarComentario}>Comentar</button>
 
         <div className="comments-list">
-          {comentarios.map((comentario, index) => (
-            <div key={index} className="comment-card">
+          {comentarios.map((comentario) => (
+            <div key={comentario.id} className="comment-card">
               <p className="comment-author">{comentario.autor}</p>
               <p>{comentario.texto}</p>
             </div>

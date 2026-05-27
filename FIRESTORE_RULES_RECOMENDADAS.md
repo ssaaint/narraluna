@@ -36,7 +36,7 @@ service cloud.firestore {
       allow read: if true;
 
       allow create: if signedIn()
-        && request.resource.data.tipo == "original"
+        && request.resource.data.tipo in ["original", "traduccion"]
         && request.resource.data.autorId == request.auth.uid
         && request.resource.data.slug is string
         && request.resource.data.colaboradoresPermitidos is list;
@@ -50,15 +50,26 @@ service cloud.firestore {
 
       match /capitulos/{capituloId} {
         allow read: if true;
-        allow create, update, delete: if get(
-          /databases/$(database)/documents/historias/$(historiaId)
-        ).data.autorId == request.auth.uid
-        || get(
-          /databases/$(database)/documents/historias/$(historiaId)
-        ).data.colaboradoresPermitidos.hasAny([
-          request.auth.uid,
-          userEmail()
-        ]);
+
+        allow create: if signedIn()
+          && (
+            get(/databases/$(database)/documents/historias/$(historiaId)).data.tipo == "traduccion"
+            || get(/databases/$(database)/documents/historias/$(historiaId)).data.autorId == request.auth.uid
+            || get(/databases/$(database)/documents/historias/$(historiaId)).data.colaboradoresPermitidos.hasAny([
+              request.auth.uid,
+              userEmail()
+            ])
+          );
+
+        allow update, delete: if signedIn()
+          && (
+            get(/databases/$(database)/documents/historias/$(historiaId)).data.autorId == request.auth.uid
+            || get(/databases/$(database)/documents/historias/$(historiaId)).data.colaboradoresPermitidos.hasAny([
+              request.auth.uid,
+              userEmail()
+            ])
+            || resource.data.traductorId == request.auth.uid
+          );
       }
     }
   }
@@ -74,3 +85,6 @@ Notas importantes:
   exactos porque pueden ser sensibles a mayusculas.
 - Para separar likes/comentarios de permisos editoriales, lo ideal en una etapa
   futura es moverlos a subcolecciones propias o usar operaciones `arrayUnion`.
+- Las traducciones quedan creadas con `estado: "pendiente"`. En una etapa de
+  moderacion se puede restringir quien cambia `estado` a `aprobada` o
+  `rechazada`.

@@ -16,11 +16,19 @@ export const normalizeCollaborators = (value) => {
 };
 
 export const getCollaborators = (historia) =>
-  normalizeCollaborators(historia?.colaboradoresPermitidos || []);
+  normalizeCollaborators([
+    ...(Array.isArray(historia?.colaboradoresPermitidos)
+      ? historia.colaboradoresPermitidos
+      : []),
+    ...(Array.isArray(historia?.colaboradores)
+      ? historia.colaboradores
+      : [])
+  ]);
 
 export const userCanManageStory = (user, historia) => {
   if (!user || !historia) return false;
   if (historia.autorId === user.uid) return true;
+  if (historia.creadoPor === user.uid) return true;
 
   const collaborators = getCollaborators(historia);
   return collaborators.includes(normalizeIdentity(user.uid)) ||
@@ -28,4 +36,6 @@ export const userCanManageStory = (user, historia) => {
 };
 
 export const userCanEditCollaborators = (user, historia) =>
-  Boolean(user && historia?.autorId === user.uid);
+  Boolean(
+    user && (historia?.autorId === user.uid || historia?.creadoPor === user.uid)
+  );

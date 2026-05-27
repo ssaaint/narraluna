@@ -4,6 +4,7 @@ import { doc, getDoc, updateDoc } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import { LEGACY_CHAPTER_ID } from "../utils/chapterUtils";
 import { userCanManageStory } from "../utils/permissionUtils";
+import { isTranslation } from "../utils/storyUtils";
 
 export default function EditarCapitulo() {
   const { historiaId, capituloId } = useParams();
@@ -13,6 +14,7 @@ export default function EditarCapitulo() {
   const [titulo, setTitulo] = useState("");
   const [contenido, setContenido] = useState("");
   const [orden, setOrden] = useState(1);
+  const [capitulo, setCapitulo] = useState(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -36,6 +38,10 @@ export default function EditarCapitulo() {
           setTitulo("Capitulo unico");
           setContenido(historiaData.contenido || "");
           setOrden(1);
+          setCapitulo({
+            id: LEGACY_CHAPTER_ID,
+            traductorId: historiaData.autorId || ""
+          });
           return;
         }
 
@@ -45,6 +51,10 @@ export default function EditarCapitulo() {
 
         if (capituloSnap.exists()) {
           const data = capituloSnap.data();
+          setCapitulo({
+            id: capituloSnap.id,
+            ...data
+          });
           setTitulo(data.titulo || "");
           setContenido(data.contenido || "");
           setOrden(data.orden || 1);
@@ -67,7 +77,12 @@ export default function EditarCapitulo() {
       return;
     }
 
-    if (!userCanManageStory(auth.currentUser, historia)) {
+    const puedeEditar = isTranslation(historia)
+      ? userCanManageStory(auth.currentUser, historia) ||
+        capitulo?.traductorId === auth.currentUser.uid
+      : userCanManageStory(auth.currentUser, historia);
+
+    if (!puedeEditar) {
       alert("Solo el creador o colaboradores pueden editar capitulos");
       return;
     }
@@ -114,8 +129,13 @@ export default function EditarCapitulo() {
     return <p className="page">Tenes que iniciar sesion para editar capitulos.</p>;
   }
 
-  if (!userCanManageStory(auth.currentUser, historia)) {
-    return <p className="page">Solo el creador o colaboradores pueden editar capitulos.</p>;
+  const puedeEditar = isTranslation(historia)
+    ? userCanManageStory(auth.currentUser, historia) ||
+      capitulo?.traductorId === auth.currentUser.uid
+    : userCanManageStory(auth.currentUser, historia);
+
+  if (!puedeEditar) {
+    return <p className="page">Solo el creador, colaboradores o traductor del capitulo pueden editarlo.</p>;
   }
 
   return (

@@ -4,7 +4,7 @@ export default function SearchBar({ value, onChange }) {
       type="text"
       placeholder="Buscar por título, autor, género..."
       value={value}
-      onChange={(e) => onChange(e.target.value)}
+      onChange={(event) => onChange(event.target.value)}
       className="search"
     />
   );

@@ -6,11 +6,19 @@ import {
   doc,
   getDoc,
   getDocs,
+  setDoc,
   updateDoc
 } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import { getDisplayChapters } from "../utils/chapterUtils";
 import { userCanManageStory } from "../utils/permissionUtils";
+import {
+  STORY_STATUS_PENDING,
+  isTranslation
+} from "../utils/storyUtils";
+import { canUploadTranslatedChapter } from "../utils/translationUtils";
+import { notifyFollowersOfNewChapter } from "../utils/notificationUtils";
+import { parseChapterImages, textOrEmpty } from "../utils/firestoreSafe";
 
 export default function NuevoCapitulo() {
   const { historiaId } = useParams();
@@ -20,6 +28,7 @@ export default function NuevoCapitulo() {
   const [cantidadCapitulos, setCantidadCapitulos] = useState(0);
   const [titulo, setTitulo] = useState("");
   const [contenido, setContenido] = useState("");
+  const [imagenesCapitulo, setImagenesCapitulo] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -67,29 +76,84 @@ export default function NuevoCapitulo() {
       return;
     }
 
-    if (!titulo.trim() || !contenido.trim()) {
+    const tituloFinal = textOrEmpty(titulo);
+    const contenidoFinal = textOrEmpty(contenido);
+    const imagenesFinales = parseChapterImages(imagenesCapitulo);
+
+    if (!tituloFinal || !contenidoFinal) {
       alert("Completa todos los campos");
       return;
     }
 
-    if (!userCanManageStory(auth.currentUser, historia)) {
-      alert("Solo el creador o colaboradores pueden agregar capitulos");
+    const puedeSubirCapitulo = isTranslation(historia)
+      ? canUploadTranslatedChapter(auth.currentUser, historia)
+      : userCanManageStory(auth.currentUser, historia);
+
+    if (!puedeSubirCapitulo) {
+      alert("No tenes permisos para agregar capitulos");
       return;
     }
 
     try {
-      await addDoc(collection(db, "historias", historiaId, "capitulos"), {
-        titulo,
-        contenido,
+      const nuevoCapitulo = {
+        titulo: tituloFinal,
+        contenido: contenidoFinal,
+        imagenes: imagenesFinales,
         orden: cantidadCapitulos + 1,
+        numero: cantidadCapitulos + 1,
         fecha: new Date(),
         updatedAt: new Date()
-      });
+      };
+
+      if (isTranslation(historia)) {
+        nuevoCapitulo.estado = STORY_STATUS_PENDING;
+        nuevoCapitulo.idiomaDestino = historia.idiomaDestino || "";
+        nuevoCapitulo.traductorId = auth.currentUser.uid;
+        nuevoCapitulo.traductorEmail = auth.currentUser.email;
+      }
+
+      const capituloRef = await addDoc(
+        collection(db, "historias", historiaId, "capitulos"),
+        nuevoCapitulo
+      );
 
       await updateDoc(doc(db, "historias", historiaId), {
         cantidadCapitulos: cantidadCapitulos + 1,
         updatedAt: new Date()
       });
+
+      if (!isTranslation(historia)) {
+        await setDoc(
+          doc(db, "obras", historiaId, "capitulos", capituloRef.id),
+          {
+            ...nuevoCapitulo,
+            origen: "original",
+            historiaLegacyId: historiaId
+          },
+          { merge: true }
+        );
+
+        await setDoc(
+          doc(db, "obras", historiaId),
+          {
+            fechaActualizacion: new Date(),
+            updatedAt: new Date()
+          },
+          { merge: true }
+        );
+      }
+
+      try {
+        await notifyFollowersOfNewChapter({
+          historiaId,
+          historia,
+          capituloId: capituloRef.id,
+          capitulo: nuevoCapitulo,
+          actor: auth.currentUser
+        });
+      } catch (notificationError) {
+        console.error(notificationError);
+      }
 
       alert("Capitulo publicado");
       navigate(`/historia/${historiaId}`);
@@ -111,8 +175,12 @@ export default function NuevoCapitulo() {
     return <p className="page">Tenes que iniciar sesion para agregar capitulos.</p>;
   }
 
-  if (!userCanManageStory(auth.currentUser, historia)) {
-    return <p className="page">Solo el creador o colaboradores pueden agregar capitulos.</p>;
+  const puedeSubirCapitulo = isTranslation(historia)
+    ? canUploadTranslatedChapter(auth.currentUser, historia)
+    : userCanManageStory(auth.currentUser, historia);
+
+  if (!puedeSubirCapitulo) {
+    return <p className="page">No tenes permisos para agregar capitulos.</p>;
   }
 
   return (
@@ -122,7 +190,7 @@ export default function NuevoCapitulo() {
       </Link>
 
       <p className="section-kicker">{historia.titulo}</p>
-      <h2>Nuevo capitulo</h2>
+      <h2>{isTranslation(historia) ? "Nuevo capitulo traducido" : "Nuevo capitulo"}</h2>
 
       <input
         placeholder="Titulo del capitulo"
@@ -136,6 +204,14 @@ export default function NuevoCapitulo() {
         value={contenido}
         onChange={(event) => setContenido(event.target.value)}
         rows={12}
+        className="form-field full-width"
+      />
+
+      <textarea
+        placeholder="Imagenes del capitulo por URL, una por linea. Opcional: URL | descripcion"
+        value={imagenesCapitulo}
+        onChange={(event) => setImagenesCapitulo(event.target.value)}
+        rows={4}
         className="form-field full-width"
       />
 
