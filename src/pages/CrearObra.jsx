@@ -16,6 +16,7 @@ import {
   safeFirestorePayload,
   textOrEmpty
 } from "../utils/firestoreSafe";
+import { getFriendlyFirebaseError } from "../utils/firebaseErrorUtils";
 
 const loadExistingSlugs = async () => {
   const [historiasResult, obrasResult] = await Promise.allSettled([
@@ -179,7 +180,7 @@ export default function CrearObra() {
         console.error("Revisa reglas de Firestore: permiso denegado al crear obra externa.");
       }
 
-      alert(error.message || "Error desconocido al crear la obra");
+      alert(getFriendlyFirebaseError(error));
     }
   };
 

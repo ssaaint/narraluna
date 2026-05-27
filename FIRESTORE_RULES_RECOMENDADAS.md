@@ -66,10 +66,15 @@ service cloud.firestore {
         );
     }
 
+    function canManageObraPermissions(obraId) {
+      return signedIn() && (isAdmin() || isObraOwner(obraId));
+    }
+
     function canTranslateObra(obraId) {
       return signedIn()
         && (
           isAdmin()
+          || (obraAllowsTranslations(obraId) && isObraOwner(obraId))
           || userDoc(request.auth.uid).data.capitulosLeidos >= 100
           || userDoc(request.auth.uid).data.puedeTraducir == true
           || obraTranslators(obraId).hasAny([request.auth.uid, userEmail()])
@@ -130,7 +135,20 @@ service cloud.firestore {
         && request.resource.data.colaboradoresPermitidos is list
         && request.resource.data.traductoresAutorizados is list;
 
-      allow update: if canManageObra(obraId)
+      allow update: if (
+          canManageObra(obraId)
+          && (
+            canManageObraPermissions(obraId)
+            || !request.resource.data.diff(resource.data).changedKeys().hasAny([
+              "colaboradoresPermitidos",
+              "colaboradores",
+              "traductoresAutorizados",
+              "traductoresPermitidos",
+              "permiteTraducciones",
+              "estadoTraducible"
+            ])
+          )
+        )
         || (
           signedIn()
           && request.resource.data.diff(resource.data).changedKeys().hasOnly([
@@ -147,7 +165,10 @@ service cloud.firestore {
 
       match /capitulos/{capituloId} {
         allow read: if true;
-        allow create, update, delete: if canManageObra(obraId);
+        allow create: if canManageObra(obraId);
+        allow update, delete: if canManageObra(obraId)
+          || (signedIn() && resource.data.autorId == request.auth.uid)
+          || (signedIn() && resource.data.creadoPor == request.auth.uid);
 
         match /likes/{uid} {
           allow read: if true;
@@ -171,7 +192,7 @@ service cloud.firestore {
       match /traducciones/{traduccionId} {
         allow read: if true;
         allow create: if obraAllowsTranslations(obraId) && canTranslateObra(obraId);
-        allow update: if isAdmin()
+        allow update: if canManageObraPermissions(obraId)
           || resource.data.traductorPrincipalId == request.auth.uid;
         allow delete: if isAdmin();
 
@@ -180,8 +201,10 @@ service cloud.firestore {
           allow create: if obraAllowsTranslations(obraId) && canTranslateObra(obraId)
             && request.resource.data.estado == "pendiente";
           allow update: if isAdmin()
+            || canManageObraPermissions(obraId)
             || resource.data.traductorId == request.auth.uid;
           allow delete: if isAdmin()
+            || canManageObraPermissions(obraId)
             || resource.data.traductorId == request.auth.uid;
 
           match /likes/{uid} {

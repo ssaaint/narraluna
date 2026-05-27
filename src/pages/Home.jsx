@@ -211,7 +211,7 @@ export default function Home() {
         <div className="home-hero-copy">
           <p className="section-kicker">Umbral de Historias</p>
           <h1>Umbral de Historias</h1>
-          <p>Cruza el umbral, lee y trascende.</p>
+          <p>Historias originales, obras traducibles y lectura para la comunidad.</p>
 
           <div className="hero-actions">
             <Link to="/explorar" className="btn-link btn-link-primary">
@@ -324,6 +324,26 @@ export default function Home() {
         ) : (
           <p className="empty-state">Todavia no hay generos destacados.</p>
         )}
+      </section>
+
+      <section className="home-section support-section">
+        <div className="section-heading">
+          <p className="section-kicker">Soporte</p>
+          <h2>Comunidad y reportes</h2>
+        </div>
+        <div className="support-panel">
+          <p>
+            Queres reportar errores, proponer ideas o hablar con la comunidad?
+          </p>
+          <a
+            href="https://discord.gg/PNJaXNgcMA"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="btn-link btn-link-primary"
+          >
+            Unirse al Discord
+          </a>
+        </div>
       </section>
     </main>
   );

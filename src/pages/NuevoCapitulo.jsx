@@ -20,6 +20,7 @@ import {
 import { canUploadTranslatedChapter } from "../utils/translationUtils";
 import { notifyFollowersOfNewChapter } from "../utils/notificationUtils";
 import { parseChapterImages, textOrEmpty } from "../utils/firestoreSafe";
+import { getFriendlyFirebaseError } from "../utils/firebaseErrorUtils";
 
 export default function NuevoCapitulo() {
   const { historiaId } = useParams();
@@ -30,6 +31,7 @@ export default function NuevoCapitulo() {
   const [titulo, setTitulo] = useState("");
   const [contenido, setContenido] = useState("");
   const [imagenesCapitulo, setImagenesCapitulo] = useState("");
+  const [perfil, setPerfil] = useState({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -37,6 +39,10 @@ export default function NuevoCapitulo() {
       try {
         const historiaRef = doc(db, "historias", historiaId);
         const historiaSnap = await getDoc(historiaRef);
+        if (auth.currentUser) {
+          const perfilSnap = await getDoc(doc(db, "usuarios", auth.currentUser.uid));
+          setPerfil(perfilSnap.exists() ? perfilSnap.data() : {});
+        }
 
         if (!historiaSnap.exists()) {
           setHistoria(null);
@@ -60,7 +66,7 @@ export default function NuevoCapitulo() {
         setHistoria(historiaData);
         setCantidadCapitulos(getDisplayChapters(historiaData, capitulosData).length);
       } catch (error) {
-        console.error(error);
+        console.error("Error completo:", error);
       } finally {
         setLoading(false);
       }
@@ -88,7 +94,7 @@ export default function NuevoCapitulo() {
 
     const puedeSubirCapitulo = isTranslation(historia)
       ? canUploadTranslatedChapter(auth.currentUser, historia)
-      : userCanManageStory(auth.currentUser, historia);
+      : userCanManageStory(auth.currentUser, historia, perfil);
 
     if (!puedeSubirCapitulo) {
       alert("No tenes permisos para agregar capitulos");
@@ -159,8 +165,8 @@ export default function NuevoCapitulo() {
       alert("Capitulo publicado");
       navigate(`/historia/${historiaId}`);
     } catch (error) {
-      console.error(error);
-      alert("Error al publicar el capitulo");
+      console.error("Error completo:", error);
+      alert(getFriendlyFirebaseError(error));
     }
   };
 
@@ -178,7 +184,7 @@ export default function NuevoCapitulo() {
 
   const puedeSubirCapitulo = isTranslation(historia)
     ? canUploadTranslatedChapter(auth.currentUser, historia)
-    : userCanManageStory(auth.currentUser, historia);
+    : userCanManageStory(auth.currentUser, historia, perfil);
 
   if (!puedeSubirCapitulo) {
     return <p className="page">No tenes permisos para agregar capitulos.</p>;

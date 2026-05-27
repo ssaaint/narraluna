@@ -55,24 +55,21 @@ export const getViewsCount = (historia = {}) =>
       0
   ) || 0;
 
-export const getStoryGenres = (historia) => {
+export const getStoryGenres = (historia = {}) => {
   const generos = [
     ...toList(historia.generos),
-    ...toList(historia["géneros"]),
     ...toList(historia.genero),
-    ...toList(historia["género"]),
-    ...toList(historia.categoria),
-    ...toList(historia["categoría"])
+    ...toList(historia.categoria)
   ];
 
   const uniqueGenres = uniqueList(generos);
-  return uniqueGenres.length ? uniqueGenres : ["Sin género"];
+  return uniqueGenres.length ? uniqueGenres : ["Sin genero"];
 };
 
-export const getStoryRawType = (historia) =>
+export const getStoryRawType = (historia = {}) =>
   historia.tipo || historia.formato || "historia";
 
-export const getStoryType = (historia) => {
+export const getStoryType = (historia = {}) => {
   const tipo = getStoryRawType(historia);
 
   if (tipo === STORY_TYPE_ORIGINAL) return "Original";
@@ -98,27 +95,26 @@ export const isTranslatableWork = (historia = {}) => {
 export const isOriginal = (historia) =>
   getStoryRawType(historia) === STORY_TYPE_ORIGINAL;
 
-export const getStoryStatus = (historia) =>
+export const getStoryStatus = (historia = {}) =>
   historia.estado || (isTranslation(historia) ? STORY_STATUS_PENDING : "");
 
-export const getStoryTags = (historia) =>
+export const getStoryTags = (historia = {}) =>
   uniqueList([
     ...toList(historia.etiquetas),
     ...toList(historia.tags),
     ...toList(historia.tag)
   ]);
 
-export const getStoryDescription = (historia) =>
+export const getStoryDescription = (historia = {}) =>
   historia.descripcion ||
-  historia["descripción"] ||
   historia.sinopsis ||
   historia.resumen ||
   "";
 
-export const getStoryPreview = (historia) =>
+export const getStoryPreview = (historia = {}) =>
   getStoryDescription(historia) || historia.contenido || "";
 
-export const getStoryDateValue = (historia) => {
+export const getStoryDateValue = (historia = {}) => {
   const fecha =
     historia.fechaActualizacion ||
     historia.updatedAt ||

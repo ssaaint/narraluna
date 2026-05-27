@@ -2,8 +2,6 @@
 
 Plataforma de lectura y publicacion de historias desarrollada con React, Vite y Firebase. Incluye autenticacion de usuarios, perfiles editables, historias originales, obras externas traducibles, capitulos, comentarios, likes, ranking, busqueda, filtros, progreso de lectura y notificaciones.
 
-Slogan visible: "Cruza el umbral, lee y trascende".
-
 ## Funciones principales
 
 - Publicacion de historias originales.

@@ -11,7 +11,9 @@ export const sortChapters = (capitulos) =>
   });
 
 export const getDisplayChapters = (historia, capitulos) => {
-  const sortedChapters = sortChapters(capitulos);
+  const sortedChapters = sortChapters(
+    capitulos.filter((capitulo) => capitulo?.estado !== "eliminado")
+  );
   const legacyChapter = historia?.contenido
     ? {
         id: LEGACY_CHAPTER_ID,

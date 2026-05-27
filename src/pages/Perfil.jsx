@@ -13,8 +13,9 @@ import {
 import { auth, db } from "../firebase";
 import StoryCard from "../components/StoryCard";
 import { getDisplayChapters } from "../utils/chapterUtils";
+import { cleanDisplayName } from "../utils/displayUtils";
 import { buildLibraryItems } from "../utils/libraryUtils";
-import { userCanManageStory } from "../utils/permissionUtils";
+import { isAdmin, userCanManageStory } from "../utils/permissionUtils";
 import {
   getCommentsCount,
   getLikesCount,
@@ -138,7 +139,7 @@ export default function Perfil() {
         }
 
         const publicaciones = buildLibraryItems(obrasDocs, historiasDocs).filter(
-          (item) => userCanManageStory(user, item)
+          (item) => userCanManageStory(user, item, perfilData)
         );
 
         setHistoriasCreadas(
@@ -386,6 +387,9 @@ export default function Perfil() {
     return <p className="page">Cargando perfil...</p>;
   }
 
+  const displayName = nombre || cleanDisplayName(user.email || "Usuario");
+  const admin = isAdmin(perfilUsuario);
+
   return (
     <main className="page page-profile">
       <section className="profile-hero">
@@ -453,8 +457,11 @@ export default function Perfil() {
           ) : (
             <>
               <p className="section-kicker">Perfil</p>
-              <h1>{nombre || "Sin nombre"}</h1>
-              <p className="profile-email">{user.email}</p>
+              <div className="profile-title-row">
+                <h1>{displayName}</h1>
+                {admin && <span className="admin-badge">Administrador</span>}
+              </div>
+              {nombre && <p className="profile-email">{user.email}</p>}
               <p className="profile-bio">
                 {bio || "Todavia no hay biografia."}
               </p>

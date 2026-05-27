@@ -1,15 +1,18 @@
 import {
+  getCommentsCount,
+  getLikesCount,
   getStoryDescription,
   getStoryGenres,
   getStoryTags,
   getStoryType,
-  getCommentsCount,
-  getLikesCount,
   toList,
   uniqueList
 } from "./storyUtils";
 import { createSlug, getStorySlug } from "./slugUtils";
-import { isAdmin } from "./permissionUtils";
+import {
+  canTranslate,
+  getAuthorizedTranslators
+} from "./permissionUtils";
 
 export const OBRA_TYPE_ORIGINAL = "original";
 export const OBRA_TYPE_TRANSLATION = "traduccion";
@@ -23,7 +26,7 @@ export const TRANSLATION_STATUS_REJECTED = "rechazada";
 export const MIN_CHAPTERS_TO_TRANSLATE = 100;
 
 export const TRANSLATOR_REQUIREMENT_MESSAGE =
-  "Necesitás haber leído al menos 100 capítulos o ser aprobado como traductor para subir traducciones.";
+  "Necesitas haber leido al menos 100 capitulos o ser aprobado como traductor para subir traducciones.";
 
 export const getObraGenres = (obra) => {
   const generos = uniqueList([
@@ -81,26 +84,11 @@ export const obraAllowsTranslations = (obra = {}) => {
 };
 
 export const getManualTranslators = (obra = {}) =>
-  uniqueList([
-    ...toList(obra.traductoresAutorizados),
-    ...toList(obra.traductoresPermitidos),
-    ...toList(obra.colaboradoresPermitidos)
-  ]);
+  uniqueList(getAuthorizedTranslators(obra));
 
 export const userCanUploadTranslation = (user, perfil = {}, obra = {}) => {
   if (!user) return false;
-
-  const readChapters = Number(perfil.capitulosLeidos || 0);
-  const manuallyAuthorized = getManualTranslators(obra).some(
-    (value) => value === user.uid || value === user.email
-  );
-
-  return (
-    readChapters >= MIN_CHAPTERS_TO_TRANSLATE ||
-    perfil.puedeTraducir === true ||
-    isAdmin(perfil) ||
-    manuallyAuthorized
-  );
+  return canTranslate(obra, perfil, user);
 };
 
 export const buildObraFromHistoria = (historia = {}) => ({
@@ -118,7 +106,12 @@ export const buildObraFromHistoria = (historia = {}) => ({
     : OBRA_TYPE_ORIGINAL,
   autorId: historia.autorId || historia.creadoPor || "",
   creadoPor: historia.creadoPor || historia.autorId || "",
-  autor: historia.autor || "Autor desconocido",
+  autor: historia.autor || historia.autorNombre || "Autor desconocido",
+  autorNombre: historia.autorNombre || historia.autor || "",
+  autorFoto: historia.autorFoto || historia.fotoAutor || "",
+  creadoPorNombre: historia.creadoPorNombre || historia.autorNombre || historia.autor || "",
+  creadoPorFoto: historia.creadoPorFoto || historia.autorFoto || historia.fotoAutor || "",
+  colaboradoresPermitidos: historia.colaboradoresPermitidos || [],
   traductoresAutorizados: historia.traductoresAutorizados || [],
   permiteTraducciones: historia.permiteTraducciones === true,
   estadoTraducible: historia.estadoTraducible === true,

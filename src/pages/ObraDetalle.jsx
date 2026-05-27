@@ -10,7 +10,6 @@ import {
   increment,
   orderBy,
   query,
-  runTransaction,
   setDoc,
   updateDoc
 } from "firebase/firestore";
@@ -30,12 +29,15 @@ import {
   userCanUploadTranslation
 } from "../utils/obraUtils";
 import {
+  canDeleteChapter,
   isAdmin,
+  isOwner,
   userCanDeleteWork,
   userCanManageStory
 } from "../utils/permissionUtils";
 import { getCreatorName } from "../utils/displayUtils";
 import { safeFirestorePayload, textOrEmpty } from "../utils/firestoreSafe";
+import { getFriendlyFirebaseError } from "../utils/firebaseErrorUtils";
 
 const sortByOrder = (items) =>
   [...items].sort((a, b) => {
@@ -77,51 +79,8 @@ const getTranslationLanguages = (traducciones) => [
   )
 ].sort((a, b) => a.localeCompare(b));
 
-const getPersistableObra = (obra) => {
-  const data = { ...obra };
-  delete data.id;
-  delete data.source;
-  delete data.route;
-  delete data.detailRoute;
-  delete data.tipoLegible;
-  return data;
-};
-
-const buildObraMirrorPayload = (obra) =>
-  safeFirestorePayload({
-    ...getPersistableObra(obra),
-    tipo: obra.tipo || "original",
-    autorId: obra.autorId || obra.creadoPor || "",
-    creadoPor: obra.creadoPor || obra.autorId || "",
-    colaboradoresPermitidos: Array.isArray(obra.colaboradoresPermitidos)
-      ? obra.colaboradoresPermitidos
-      : [],
-    traductoresAutorizados: Array.isArray(obra.traductoresAutorizados)
-      ? obra.traductoresAutorizados
-      : [],
-    permiteTraducciones: obra.permiteTraducciones === true,
-    estadoTraducible: obra.estadoTraducible === true,
-    vistas: Number(obra.vistas || obra.estadisticas?.vistas || 0) || 0,
-    likesCount: Number(obra.likesCount || obra.estadisticas?.likesCount || 0) || 0,
-    comentariosCount:
-      Number(obra.comentariosCount || obra.estadisticas?.comentariosCount || 0) ||
-      0,
-    seguidoresCount:
-      Number(obra.seguidoresCount || obra.estadisticas?.seguidoresCount || 0) || 0,
-    estadisticas: {
-      vistas: Number(obra.estadisticas?.vistas || obra.vistas || 0) || 0,
-      likesCount: Number(obra.estadisticas?.likesCount || obra.likesCount || 0) || 0,
-      comentariosCount:
-        Number(obra.estadisticas?.comentariosCount || obra.comentariosCount || 0) ||
-        0,
-      seguidoresCount:
-        Number(obra.estadisticas?.seguidoresCount || obra.seguidoresCount || 0) ||
-        0,
-      traduccionesCount:
-        Number(obra.estadisticas?.traduccionesCount || obra.traduccionesCount || 0) ||
-        0
-    }
-  });
+const getLocalCounterValue = (obra, key) =>
+  Number(obra?.[key] || obra?.estadisticas?.[key] || 0) || 0;
 
 export default function ObraDetalle() {
   const { obraId } = useParams();
@@ -333,6 +292,7 @@ export default function ObraDetalle() {
   const puedeEditar = userCanManageStory(auth.currentUser, obra || {}, perfil);
   const puedeBorrar = userCanDeleteWork(auth.currentUser, obra || {}, perfil);
   const admin = isAdmin(perfil);
+  const puedeModerarTraducciones = admin || isOwner(obra || {}, auth.currentUser);
   const generos = getObraGenres(obra || {});
   const etiquetas = getObraTags(obra || {});
   const idiomasTraduccion = useMemo(
@@ -349,15 +309,22 @@ export default function ObraDetalle() {
     [idiomaSeleccionado, traducciones]
   );
 
-  const ensureObraDocument = async () => {
-    const obraRef = doc(db, "obras", obraId);
-    const obraSnap = await getDoc(obraRef);
-
-    if (!obraSnap.exists() && obra) {
-      await setDoc(obraRef, buildObraMirrorPayload(obra), { merge: true });
+  const updateObraCountersBestEffort = async (counterKey, amount) => {
+    try {
+      await updateDoc(
+        doc(db, "obras", obraId),
+        {
+          [counterKey]: increment(amount),
+          [`estadisticas.${counterKey}`]: increment(amount),
+          fechaActualizacion: new Date(),
+          updatedAt: new Date()
+        }
+      );
+      return true;
+    } catch (counterError) {
+      console.error("No se pudo actualizar el contador:", counterError);
+      return false;
     }
-
-    return obraRef;
   };
 
   const toggleLikeObra = async () => {
@@ -370,27 +337,14 @@ export default function ObraDetalle() {
 
     try {
       setActionBusy(true);
-      const obraRef = await ensureObraDocument();
       const likeRef = doc(db, "obras", obraId, "likes", currentUser.uid);
-      const nextLiked = await runTransaction(db, async (transaction) => {
-        const likeSnap = await transaction.get(likeRef);
+      const likeSnap = await getDoc(likeRef);
+      const nextLiked = !likeSnap.exists();
 
-        if (likeSnap.exists()) {
-          transaction.delete(likeRef);
-          transaction.set(
-            obraRef,
-            {
-              likesCount: increment(-1),
-              "estadisticas.likesCount": increment(-1),
-              fechaActualizacion: new Date(),
-              updatedAt: new Date()
-            },
-            { merge: true }
-          );
-          return false;
-        }
-
-        transaction.set(
+      if (likeSnap.exists()) {
+        await deleteDoc(likeRef);
+      } else {
+        await setDoc(
           likeRef,
           safeFirestorePayload({
             userId: currentUser.uid,
@@ -398,25 +352,14 @@ export default function ObraDetalle() {
             fecha: new Date()
           })
         );
-        transaction.set(
-          obraRef,
-          {
-            likesCount: increment(1),
-            "estadisticas.likesCount": increment(1),
-            fechaActualizacion: new Date(),
-            updatedAt: new Date()
-          },
-          { merge: true }
-        );
-        return true;
-      });
+      }
+
+      await updateObraCountersBestEffort("likesCount", nextLiked ? 1 : -1);
 
       setLikedByUser(nextLiked);
       setObra((current) => {
         if (!current) return current;
-        const currentLikes = Number(
-          current.likesCount || current.estadisticas?.likesCount || 0
-        );
+        const currentLikes = getLocalCounterValue(current, "likesCount");
         const nextLikes = Math.max(0, currentLikes + (nextLiked ? 1 : -1));
 
         return {
@@ -430,7 +373,7 @@ export default function ObraDetalle() {
       });
     } catch (error) {
       console.error("Error completo:", error);
-      alert(error.message || "Error desconocido");
+      alert(getFriendlyFirebaseError(error));
     } finally {
       setActionBusy(false);
     }
@@ -446,28 +389,19 @@ export default function ObraDetalle() {
 
     try {
       setActionBusy(true);
-      const obraRef = await ensureObraDocument();
       const followedRef = doc(db, "usuarios", currentUser.uid, "seguidas", obraId);
       const followerRef = doc(db, "obras", obraId, "seguidores", currentUser.uid);
-      const nextFollowing = await runTransaction(db, async (transaction) => {
-        const followedSnap = await transaction.get(followedRef);
+      const followedSnap = await getDoc(followedRef);
+      const nextFollowing = !followedSnap.exists();
 
-        if (followedSnap.exists()) {
-          transaction.delete(followedRef);
-          transaction.delete(followerRef);
-          transaction.set(
-            obraRef,
-            {
-              seguidoresCount: increment(-1),
-              "estadisticas.seguidoresCount": increment(-1),
-              fechaActualizacion: new Date(),
-              updatedAt: new Date()
-            },
-            { merge: true }
-          );
-          return false;
+      if (followedSnap.exists()) {
+        await deleteDoc(followedRef);
+        try {
+          await deleteDoc(followerRef);
+        } catch (followerError) {
+          console.error("No se pudo borrar seguidor en obra:", followerError);
         }
-
+      } else {
         const followedPayload = safeFirestorePayload({
           obraId,
           titulo: obra?.titulo || "",
@@ -477,35 +411,28 @@ export default function ObraDetalle() {
           fecha: new Date()
         });
 
-        transaction.set(followedRef, followedPayload, { merge: true });
-        transaction.set(
-          followerRef,
-          safeFirestorePayload({
-            userId: currentUser.uid,
-            email: currentUser.email || "",
-            fecha: new Date()
-          }),
-          { merge: true }
-        );
-        transaction.set(
-          obraRef,
-          {
-            seguidoresCount: increment(1),
-            "estadisticas.seguidoresCount": increment(1),
-            fechaActualizacion: new Date(),
-            updatedAt: new Date()
-          },
-          { merge: true }
-        );
-        return true;
-      });
+        await setDoc(followedRef, followedPayload, { merge: true });
+        try {
+          await setDoc(
+            followerRef,
+            safeFirestorePayload({
+              userId: currentUser.uid,
+              email: currentUser.email || "",
+              fecha: new Date()
+            }),
+            { merge: true }
+          );
+        } catch (followerError) {
+          console.error("No se pudo reflejar seguidor en obra:", followerError);
+        }
+      }
+
+      await updateObraCountersBestEffort("seguidoresCount", nextFollowing ? 1 : -1);
 
       setSiguiendo(nextFollowing);
       setObra((current) => {
         if (!current) return current;
-        const currentFollowers = Number(
-          current.seguidoresCount || current.estadisticas?.seguidoresCount || 0
-        );
+        const currentFollowers = getLocalCounterValue(current, "seguidoresCount");
         const nextFollowers = Math.max(
           0,
           currentFollowers + (nextFollowing ? 1 : -1)
@@ -522,7 +449,11 @@ export default function ObraDetalle() {
       });
     } catch (error) {
       console.error("Error completo:", error);
-      alert(error.message || "Error desconocido");
+      alert(
+        error?.code === "permission-denied"
+          ? "No pudimos seguir esta obra. Revisa tu sesion e intenta de nuevo."
+          : getFriendlyFirebaseError(error)
+      );
     } finally {
       setActionBusy(false);
     }
@@ -544,7 +475,6 @@ export default function ObraDetalle() {
 
     try {
       setActionBusy(true);
-      const obraRef = await ensureObraDocument();
       const perfilSnap = await getDoc(doc(db, "usuarios", currentUser.uid));
       const perfilData = perfilSnap.exists() ? perfilSnap.data() : {};
       const nombre =
@@ -563,16 +493,7 @@ export default function ObraDetalle() {
         comentarioPayload
       );
 
-      await setDoc(
-        obraRef,
-        {
-          comentariosCount: increment(1),
-          "estadisticas.comentariosCount": increment(1),
-          fechaActualizacion: now,
-          updatedAt: now
-        },
-        { merge: true }
-      );
+      await updateObraCountersBestEffort("comentariosCount", 1);
 
       setComentarios((current) => [
         ...current,
@@ -599,7 +520,7 @@ export default function ObraDetalle() {
       });
     } catch (error) {
       console.error("Error completo:", error);
-      alert(error.message || "Error desconocido");
+      alert(getFriendlyFirebaseError(error));
     } finally {
       setActionBusy(false);
     }
@@ -618,16 +539,7 @@ export default function ObraDetalle() {
     try {
       setActionBusy(true);
       await deleteDoc(doc(db, "obras", obraId, "comentarios", comentario.id));
-      await setDoc(
-        doc(db, "obras", obraId),
-        {
-          comentariosCount: increment(-1),
-          "estadisticas.comentariosCount": increment(-1),
-          fechaActualizacion: new Date(),
-          updatedAt: new Date()
-        },
-        { merge: true }
-      );
+      await updateObraCountersBestEffort("comentariosCount", -1);
       setComentarios((current) =>
         current.filter((item) => item.id !== comentario.id)
       );
@@ -649,14 +561,14 @@ export default function ObraDetalle() {
       });
     } catch (error) {
       console.error("Error completo:", error);
-      alert(error.message || "Error desconocido");
+      alert(getFriendlyFirebaseError(error));
     } finally {
       setActionBusy(false);
     }
   };
 
   const actualizarEstadoTraduccion = async (traduccionId, estado) => {
-    if (!admin) return;
+    if (!puedeModerarTraducciones) return;
 
     try {
       setActionBusy(true);
@@ -677,7 +589,7 @@ export default function ObraDetalle() {
       );
     } catch (error) {
       console.error("Error completo:", error);
-      alert(error.message || "Error desconocido");
+      alert(getFriendlyFirebaseError(error));
     } finally {
       setActionBusy(false);
     }
@@ -728,7 +640,114 @@ export default function ObraDetalle() {
       navigate("/explorar");
     } catch (error) {
       console.error("Error completo:", error);
-      alert(error.message || "Error desconocido");
+      alert(getFriendlyFirebaseError(error));
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const eliminarCapituloOriginal = async (capitulo) => {
+    const currentUser = auth.currentUser;
+
+    if (!currentUser || !canDeleteChapter(obra, capitulo, perfil, currentUser)) {
+      alert("No tenes permisos para eliminar este capitulo.");
+      return;
+    }
+
+    if (capitulo.legacy) {
+      alert("Este capitulo pertenece al formato antiguo y no se elimina desde esta pantalla.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Seguro que queres eliminar este capitulo? Esta accion no se puede deshacer."
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setActionBusy(true);
+      const now = new Date();
+      const payload = safeFirestorePayload({
+        estado: "eliminado",
+        deletedAt: now,
+        deletedBy: currentUser.uid,
+        updatedAt: now
+      });
+      const primaryRef = legacyMode
+        ? doc(db, "historias", obraId, "capitulos", capitulo.id)
+        : doc(db, "obras", obraId, "capitulos", capitulo.id);
+
+      await setDoc(primaryRef, payload, { merge: true });
+
+      try {
+        const mirrorRef = legacyMode
+          ? doc(db, "obras", obraId, "capitulos", capitulo.id)
+          : doc(db, "historias", obraId, "capitulos", capitulo.id);
+        await setDoc(mirrorRef, payload, { merge: true });
+      } catch (mirrorError) {
+        console.error("No se pudo reflejar el borrado del capitulo:", mirrorError);
+      }
+
+      setCapitulos((current) => current.filter((item) => item.id !== capitulo.id));
+    } catch (error) {
+      console.error("Error completo:", error);
+      alert(getFriendlyFirebaseError(error));
+    } finally {
+      setActionBusy(false);
+    }
+  };
+
+  const eliminarCapituloTraducido = async (traduccionId, capitulo) => {
+    const currentUser = auth.currentUser;
+
+    if (!currentUser || !canDeleteChapter(obra, capitulo, perfil, currentUser)) {
+      alert("No tenes permisos para eliminar este capitulo.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      "Seguro que queres eliminar este capitulo? Esta accion no se puede deshacer."
+    );
+
+    if (!confirmed) return;
+
+    try {
+      setActionBusy(true);
+      await setDoc(
+        doc(
+          db,
+          "obras",
+          obraId,
+          "traducciones",
+          traduccionId,
+          "capitulos",
+          capitulo.id
+        ),
+        safeFirestorePayload({
+          estado: "eliminado",
+          deletedAt: new Date(),
+          deletedBy: currentUser.uid,
+          updatedAt: new Date()
+        }),
+        { merge: true }
+      );
+
+      setTraducciones((current) =>
+        current.map((traduccion) =>
+          traduccion.id === traduccionId
+            ? {
+                ...traduccion,
+                capitulos: (traduccion.capitulos || []).filter(
+                  (item) => item.id !== capitulo.id
+                )
+              }
+            : traduccion
+        )
+      );
+    } catch (error) {
+      console.error("Error completo:", error);
+      alert(getFriendlyFirebaseError(error));
     } finally {
       setActionBusy(false);
     }
@@ -901,15 +920,27 @@ export default function ObraDetalle() {
         {capitulos.length > 0 ? (
           <div className="chapter-list">
             {capitulos.map((capitulo) => (
-              <Link
-                key={capitulo.id}
-                to={`/obra/${obra.id}/capitulo/${capitulo.id}`}
-                className="chapter-item"
-              >
-                <span>Capitulo {capitulo.numero || capitulo.orden || "?"}</span>
-                <strong>{capitulo.titulo || "Sin titulo"}</strong>
-                <p>{getChapterPreview(capitulo) || "Sin vista previa."}</p>
-              </Link>
+              <div key={capitulo.id} className="chapter-row">
+                <Link
+                  to={`/obra/${obra.id}/capitulo/${capitulo.id}`}
+                  className="chapter-item"
+                >
+                  <span>Capitulo {capitulo.numero || capitulo.orden || "?"}</span>
+                  <strong>{capitulo.titulo || "Sin titulo"}</strong>
+                  <p>{getChapterPreview(capitulo) || "Sin vista previa."}</p>
+                </Link>
+
+                {canDeleteChapter(obra, capitulo, perfil, auth.currentUser) && (
+                  <button
+                    type="button"
+                    className="btn-danger btn-danger-soft"
+                    onClick={() => eliminarCapituloOriginal(capitulo)}
+                    disabled={actionBusy}
+                  >
+                    Eliminar
+                  </button>
+                )}
+              </div>
             ))}
           </div>
         ) : (
@@ -969,7 +1000,7 @@ export default function ObraDetalle() {
                     "Usuario registrado"}
                 </p>
 
-                {admin && (
+                {puedeModerarTraducciones && (
                   <div className="admin-actions">
                     <button
                       type="button"
@@ -1002,16 +1033,32 @@ export default function ObraDetalle() {
 
                 {traduccion.capitulos?.length > 0 ? (
                   <div className="translated-chapter-list">
-                    {traduccion.capitulos.map((capitulo) => (
-                      <Link
-                        key={capitulo.id}
-                        to={`/obra/${obra.id}/traducciones/${traduccion.id}/capitulo/${capitulo.id}`}
-                        className="translated-chapter-item"
-                      >
-                        <strong>{capitulo.titulo || "Capitulo traducido"}</strong>
-                        <span>{getStatusLabel(capitulo.estado)}</span>
-                      </Link>
-                    ))}
+                    {traduccion.capitulos
+                      .filter((capitulo) => capitulo.estado !== "eliminado")
+                      .map((capitulo) => (
+                        <div key={capitulo.id} className="translated-chapter-row">
+                          <Link
+                            to={`/obra/${obra.id}/traducciones/${traduccion.id}/capitulo/${capitulo.id}`}
+                            className="translated-chapter-item"
+                          >
+                            <strong>{capitulo.titulo || "Capitulo traducido"}</strong>
+                            <span>{getStatusLabel(capitulo.estado)}</span>
+                          </Link>
+
+                          {canDeleteChapter(obra, capitulo, perfil, auth.currentUser) && (
+                            <button
+                              type="button"
+                              className="btn-danger btn-danger-soft"
+                              onClick={() =>
+                                eliminarCapituloTraducido(traduccion.id, capitulo)
+                              }
+                              disabled={actionBusy}
+                            >
+                              Eliminar
+                            </button>
+                          )}
+                        </div>
+                      ))}
                   </div>
                 ) : (
                   <p className="empty-state">Sin capitulos traducidos.</p>

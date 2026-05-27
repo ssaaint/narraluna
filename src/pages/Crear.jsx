@@ -18,6 +18,7 @@ import {
   safeFirestorePayload,
   textOrEmpty
 } from "../utils/firestoreSafe";
+import { getFriendlyFirebaseError } from "../utils/firebaseErrorUtils";
 
 const shortSuffix = (userId) =>
   `${String(userId || "u").slice(0, 4)}-${Date.now().toString(36).slice(-5)}`;
@@ -261,7 +262,7 @@ export default function Crear() {
         console.error("Revisa reglas de Firestore: permiso denegado al publicar.");
       }
 
-      alert(error.message || "Error desconocido al publicar");
+      alert(getFriendlyFirebaseError(error));
     }
   };
 

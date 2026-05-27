@@ -1255,6 +1255,30 @@ button:disabled {
   margin-bottom: 8px;
 }
 
+.profile-title-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.admin-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  padding: 6px 10px;
+  border: 1px solid rgba(255, 209, 102, 0.34);
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(255, 209, 102, 0.18), rgba(199, 125, 255, 0.12)),
+    rgba(255,255,255,0.04);
+  color: #ffd166;
+  font-size: 0.78rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
 .profile-email,
 .profile-bio {
   color: rgba(229, 217, 255, 0.72);
@@ -1303,6 +1327,13 @@ button:disabled {
 .translated-chapter-list {
   display: grid;
   gap: 10px;
+}
+
+.translated-chapter-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: stretch;
 }
 
 .translated-chapter-item {
@@ -2113,8 +2144,60 @@ body::before {
   line-height: 1.45;
 }
 
+.support-panel {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  align-items: center;
+  padding: 22px;
+  border: 1px solid rgba(255, 209, 102, 0.22);
+  border-radius: 8px;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.065), rgba(255,255,255,0.032)),
+    rgba(10, 0, 20, 0.72);
+}
+
+.support-panel p {
+  color: rgba(229, 217, 255, 0.78);
+  line-height: 1.55;
+}
+
 .genre-tile-link {
   text-decoration: none;
+}
+
+.navbar {
+  padding: 14px clamp(18px, 4vw, 42px);
+  background:
+    linear-gradient(180deg, rgba(24, 8, 38, 0.86), rgba(10, 0, 20, 0.68)),
+    rgba(10, 0, 20, 0.76);
+  border-bottom: 1px solid rgba(199,125,255,0.24);
+  box-shadow: 0 16px 44px rgba(0,0,0,0.28);
+}
+
+.logo {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.nav-right {
+  min-width: 0;
+}
+
+.nav-links {
+  margin-left: auto;
+}
+
+.nav-account {
+  flex: 0 0 auto;
+}
+
+.nav-link {
+  border-color: rgba(229, 217, 255, 0.14);
+  background:
+    linear-gradient(180deg, rgba(255,255,255,0.09), rgba(255,255,255,0.035)),
+    rgba(18, 5, 31, 0.62);
+  backdrop-filter: blur(10px);
 }
 
 @media (max-width: 920px) {
@@ -2285,8 +2368,11 @@ body::before {
 
   .chapter-navigation,
   .chapter-reader-heading,
-  .chapter-row {
+  .chapter-row,
+  .translated-chapter-row,
+  .support-panel {
     display: grid;
+    grid-template-columns: 1fr;
   }
 
   .reading-settings-heading {

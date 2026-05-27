@@ -20,10 +20,12 @@ import {
   textOrEmpty
 } from "../utils/firestoreSafe";
 import {
+  canManageCollaborators,
   normalizeCollaborators,
   userCanDeleteWork,
   userCanManageStory
 } from "../utils/permissionUtils";
+import { getFriendlyFirebaseError } from "../utils/firebaseErrorUtils";
 
 const listToInput = (value) =>
   Array.isArray(value) ? value.join(", ") : String(value || "");
@@ -136,6 +138,7 @@ export default function EditarObra() {
 
   const puedeEditar = userCanManageStory(auth.currentUser, obra, perfil);
   const puedeBorrar = userCanDeleteWork(auth.currentUser, obra, perfil);
+  const puedeGestionarPermisos = canManageCollaborators(obra, perfil, auth.currentUser);
   const esObraExterna = obra?.tipo === OBRA_TYPE_EXTERNAL;
 
   const buildUpdatePayload = () => {
@@ -149,25 +152,29 @@ export default function EditarObra() {
     const etiquetasFinales = listOrEmpty(etiquetas);
     const portadaFinal = textOrEmpty(portadaUrl);
     const now = new Date();
-    const canTranslate = Boolean(permiteTraducciones);
-
-    return safeFirestorePayload({
+    const payload = {
       titulo: tituloFinal,
       descripcion: textOrEmpty(descripcion),
       generos: generosFinales,
       etiquetas: etiquetasFinales,
       portada: portadaFinal,
       portadaUrl: portadaFinal,
-      permiteTraducciones: canTranslate,
-      estadoTraducible: canTranslate,
-      colaboradoresPermitidos: multilineToList(colaboradores),
-      traductoresAutorizados: multilineToList(traductoresAutorizados),
       autorOriginal: esObraExterna ? textOrEmpty(autorOriginal) : "",
       idiomaOriginal: esObraExterna ? textOrEmpty(idiomaOriginal) : "",
       paisOrigen: esObraExterna ? textOrEmpty(paisOrigen) : "",
       fechaActualizacion: now,
       updatedAt: now
-    });
+    };
+
+    if (puedeGestionarPermisos) {
+      const canTranslate = Boolean(permiteTraducciones);
+      payload.permiteTraducciones = canTranslate;
+      payload.estadoTraducible = canTranslate;
+      payload.colaboradoresPermitidos = multilineToList(colaboradores);
+      payload.traductoresAutorizados = multilineToList(traductoresAutorizados);
+    }
+
+    return safeFirestorePayload(payload);
   };
 
   const guardarCambios = async () => {
@@ -216,7 +223,7 @@ export default function EditarObra() {
       navigate(`/obra/${obraId}`);
     } catch (error) {
       console.error("Error completo:", error);
-      alert(error.message || "Error desconocido al editar");
+      alert(getFriendlyFirebaseError(error));
     } finally {
       setSaving(false);
     }
@@ -274,7 +281,7 @@ export default function EditarObra() {
       navigate(`/obra/${obraId}`);
     } catch (error) {
       console.error("Error completo:", error);
-      alert(error.message || "Error desconocido al migrar");
+      alert(getFriendlyFirebaseError(error));
     } finally {
       setSaving(false);
     }
@@ -324,7 +331,7 @@ export default function EditarObra() {
       navigate("/explorar");
     } catch (error) {
       console.error("Error completo:", error);
-      alert(error.message || "Error desconocido");
+      alert(getFriendlyFirebaseError(error));
     } finally {
       setSaving(false);
     }
@@ -427,37 +434,44 @@ export default function EditarObra() {
         </>
       )}
 
-      <section className="advanced-settings-panel">
-        <div className="section-heading">
-          <p className="section-kicker">Ajustes avanzados</p>
-          <h3>Permisos y traducciones</h3>
-        </div>
+      {puedeGestionarPermisos ? (
+        <section className="advanced-settings-panel">
+          <div className="section-heading">
+            <p className="section-kicker">Ajustes avanzados</p>
+            <h3>Permisos y traducciones</h3>
+          </div>
 
-        <label className="form-check">
-          <input
-            type="checkbox"
-            checked={permiteTraducciones}
-            onChange={(event) => setPermiteTraducciones(event.target.checked)}
+          <label className="form-check">
+            <input
+              type="checkbox"
+              checked={permiteTraducciones}
+              onChange={(event) => setPermiteTraducciones(event.target.checked)}
+            />
+            Permitir traducciones de esta obra
+          </label>
+
+          <textarea
+            placeholder="Colaboradores permitidos, un UID o email por linea"
+            value={colaboradores}
+            onChange={(event) => setColaboradores(event.target.value)}
+            rows={4}
+            className="form-field full-width"
           />
-          Permitir traducciones de esta obra
-        </label>
 
-        <textarea
-          placeholder="Colaboradores permitidos, un UID o email por linea"
-          value={colaboradores}
-          onChange={(event) => setColaboradores(event.target.value)}
-          rows={4}
-          className="form-field full-width"
-        />
-
-        <textarea
-          placeholder="Traductores autorizados, un UID o email por linea"
-          value={traductoresAutorizados}
-          onChange={(event) => setTraductoresAutorizados(event.target.value)}
-          rows={4}
-          className="form-field full-width"
-        />
-      </section>
+          <textarea
+            placeholder="Traductores autorizados, un UID o email por linea"
+            value={traductoresAutorizados}
+            onChange={(event) => setTraductoresAutorizados(event.target.value)}
+            rows={4}
+            className="form-field full-width"
+          />
+        </section>
+      ) : (
+        <p className="permission-note">
+          Podes editar la informacion de la obra, pero solo el autor o un
+          administrador pueden modificar colaboradores y traductores.
+        </p>
+      )}
 
       <div className="form-actions">
         <button onClick={guardarCambios} disabled={saving}>

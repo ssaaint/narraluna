@@ -22,6 +22,7 @@ import {
   safeFirestorePayload,
   textOrEmpty
 } from "../utils/firestoreSafe";
+import { getFriendlyFirebaseError } from "../utils/firebaseErrorUtils";
 
 const getPersistableObra = (obra) => {
   const data = { ...obra };
@@ -224,7 +225,7 @@ export default function SubirTraduccionObra() {
         console.error("Revisa reglas de Firestore: permiso denegado al subir traduccion.");
       }
 
-      alert(error.message || "Error desconocido al subir la traduccion");
+      alert(getFriendlyFirebaseError(error));
     }
   };
 

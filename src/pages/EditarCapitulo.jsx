@@ -7,6 +7,7 @@ import { LEGACY_CHAPTER_ID } from "../utils/chapterUtils";
 import { parseChapterImages, safeFirestorePayload } from "../utils/firestoreSafe";
 import { userCanManageStory } from "../utils/permissionUtils";
 import { isTranslation } from "../utils/storyUtils";
+import { getFriendlyFirebaseError } from "../utils/firebaseErrorUtils";
 
 const imagesToText = (images) =>
   Array.isArray(images)
@@ -28,12 +29,17 @@ export default function EditarCapitulo() {
   const [imagenesCapitulo, setImagenesCapitulo] = useState("");
   const [orden, setOrden] = useState(1);
   const [capitulo, setCapitulo] = useState(null);
+  const [perfil, setPerfil] = useState({});
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const cargarDatos = async () => {
       try {
         const historiaSnap = await getDoc(doc(db, "historias", historiaId));
+        if (auth.currentUser) {
+          const perfilSnap = await getDoc(doc(db, "usuarios", auth.currentUser.uid));
+          setPerfil(perfilSnap.exists() ? perfilSnap.data() : {});
+        }
 
         if (!historiaSnap.exists()) {
           setHistoria(null);
@@ -75,7 +81,7 @@ export default function EditarCapitulo() {
           setOrden(data.orden || 1);
         }
       } catch (error) {
-        console.error(error);
+        console.error("Error completo:", error);
       } finally {
         setLoading(false);
       }
@@ -93,9 +99,9 @@ export default function EditarCapitulo() {
     }
 
     const puedeEditar = isTranslation(historia)
-      ? userCanManageStory(auth.currentUser, historia) ||
+      ? userCanManageStory(auth.currentUser, historia, perfil) ||
         capitulo?.traductorId === auth.currentUser.uid
-      : userCanManageStory(auth.currentUser, historia);
+      : userCanManageStory(auth.currentUser, historia, perfil);
 
     if (!puedeEditar) {
       alert("Solo el creador o colaboradores pueden editar capitulos");
@@ -155,8 +161,8 @@ export default function EditarCapitulo() {
       alert("Capitulo guardado");
       navigate(`/historia/${historiaId}/capitulo/${capituloId}`);
     } catch (error) {
-      console.error(error);
-      alert("Error al guardar el capitulo");
+      console.error("Error completo:", error);
+      alert(getFriendlyFirebaseError(error));
     }
   };
 
@@ -173,9 +179,9 @@ export default function EditarCapitulo() {
   }
 
   const puedeEditar = isTranslation(historia)
-    ? userCanManageStory(auth.currentUser, historia) ||
+    ? userCanManageStory(auth.currentUser, historia, perfil) ||
       capitulo?.traductorId === auth.currentUser.uid
-    : userCanManageStory(auth.currentUser, historia);
+    : userCanManageStory(auth.currentUser, historia, perfil);
 
   if (!puedeEditar) {
     return <p className="page">Solo el creador, colaboradores o traductor del capitulo pueden editarlo.</p>;

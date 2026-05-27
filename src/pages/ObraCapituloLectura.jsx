@@ -2,17 +2,20 @@ import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   collection,
+  deleteDoc,
   doc,
   getDoc,
   getDocs,
   increment,
   runTransaction,
-  setDoc
+  setDoc,
+  updateDoc
 } from "firebase/firestore";
 import { auth, db } from "../firebase";
 import { getDisplayChapters } from "../utils/chapterUtils";
 import { buildObraFromHistoria } from "../utils/obraUtils";
 import { safeFirestorePayload } from "../utils/firestoreSafe";
+import { getFriendlyFirebaseError } from "../utils/firebaseErrorUtils";
 
 const READER_PREFS_KEY = "umbral.readerPreferences";
 const LEGACY_READER_PREFS_KEY = "narraluna.readerPreferences";
@@ -257,7 +260,7 @@ export default function ObraCapituloLectura() {
             capitulosSnap.docs.map((capituloDoc) => ({
               id: capituloDoc.id,
               ...capituloDoc.data()
-            }))
+            })).filter((capitulo) => capitulo.estado !== "eliminado")
           );
 
           setTraduccion({
@@ -340,7 +343,7 @@ export default function ObraCapituloLectura() {
           });
         }
       } catch (error) {
-        console.error(error);
+        console.error("Error completo:", error);
       } finally {
         setLoading(false);
       }
@@ -385,38 +388,14 @@ export default function ObraCapituloLectura() {
             capituloId
           )
         : doc(db, "obras", obraId, "capitulos", capituloId);
-      const capituloSnap = await getDoc(capituloRef);
-
-      if (!capituloSnap.exists()) {
-        await setDoc(
-          capituloRef,
-          safeFirestorePayload({
-            ...capituloActual,
-            likesCount: Number(capituloActual.likesCount || 0) || 0,
-            updatedAt: new Date()
-          }),
-          { merge: true }
-        );
-      }
-
       const likeRef = doc(capituloRef, "likes", currentUser.uid);
-      const nextLiked = await runTransaction(db, async (transaction) => {
-        const likeSnap = await transaction.get(likeRef);
+      const likeSnap = await getDoc(likeRef);
+      const nextLiked = !likeSnap.exists();
 
-        if (likeSnap.exists()) {
-          transaction.delete(likeRef);
-          transaction.set(
-            capituloRef,
-            {
-              likesCount: increment(-1),
-              updatedAt: new Date()
-            },
-            { merge: true }
-          );
-          return false;
-        }
-
-        transaction.set(
+      if (likeSnap.exists()) {
+        await deleteDoc(likeRef);
+      } else {
+        await setDoc(
           likeRef,
           safeFirestorePayload({
             userId: currentUser.uid,
@@ -424,22 +403,25 @@ export default function ObraCapituloLectura() {
             fecha: new Date()
           })
         );
-        transaction.set(
+      }
+
+      try {
+        await updateDoc(
           capituloRef,
           {
-            likesCount: increment(1),
+            likesCount: increment(nextLiked ? 1 : -1),
             updatedAt: new Date()
-          },
-          { merge: true }
+          }
         );
-        return true;
-      });
+      } catch (counterError) {
+        console.error("No se pudo actualizar contador de capitulo:", counterError);
+      }
 
       setLikedByUser(nextLiked);
       setChapterLikes((current) => Math.max(0, current + (nextLiked ? 1 : -1)));
     } catch (error) {
       console.error("Error completo:", error);
-      alert(error.message || "Error desconocido");
+      alert(getFriendlyFirebaseError(error));
     } finally {
       setActionBusy(false);
     }
