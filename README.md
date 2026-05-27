@@ -10,7 +10,6 @@ Plataforma de lectura y publicacion de historias desarrollada con React, Vite y 
 - Likes, comentarios y seguimiento de obras.
 - Perfil con avatar por URL, estadisticas y progreso de lectura.
 - Home tipo dashboard y pagina Explorar con busqueda y filtros.
-- Soporte de rol administrador mediante `usuarios/{uid}.rol = "admin"`.
 
 ## Tecnologias
 
