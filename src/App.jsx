@@ -2,6 +2,7 @@ import { useState, useEffect } from "react";
 import { Routes, Route } from "react-router-dom";
 import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "./firebase";
+import { Analytics } from "@vercel/analytics/react";
 
 import Home from "./pages/Home";
 import Explorar from "./pages/Explorar";
@@ -81,6 +82,8 @@ export default function App() {
           element={<NuevoCapitulo />}
         />
       </Routes>
+      
+      <Analytics />
     </div>
   );
 }
